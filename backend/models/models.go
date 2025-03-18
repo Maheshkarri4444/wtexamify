@@ -43,13 +43,15 @@ type Exam struct {
 }
 
 type AnswerSheet struct {
-	ID           primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	ExamID       primitive.ObjectID `bson:"exam_id" json:"exam_id"`
-	StudentName  string             `bson:"student_name" json:"student_name"`
-	StudentEmail string             `bson:"student_email" json:"student_email"`
-	Data         map[string]string  `bson:"data" json:"data"` // Array of objects { "question": "answer" }
-	AIScore      float64            `bson:"ai_score,omitempty" json:"ai_score,omitempty"`
-	SubmitStatus bool               `bson:"submit_status" json:"submit_status"`
-	Copied       bool               `bson:"copied" json:"copied"`
-	CreatedAt    primitive.DateTime `bson:"created_at" json:"created_at"`
+	ID           primitive.ObjectID  `bson:"_id,omitempty" json:"id"`
+	ExamID       primitive.ObjectID  `bson:"exam_id" json:"exam_id"`
+	ExamType     string              `bson:"exam_type" json:"exam_type"` // New field
+	Duration     int                 `bson:"duration" json:"duration"`
+	StudentName  string              `bson:"student_name" json:"student_name"`
+	StudentEmail string              `bson:"student_email" json:"student_email"`
+	Data         []map[string]string `bson:"data" json:"data"`
+	AIScore      float64             `bson:"ai_score,omitempty" json:"ai_score,omitempty"`
+	Copied       bool                `bson:"copied" json:"copied"`
+	SubmitStatus bool                `bson:"submit_status" json:"submit_status"`
+	CreatedAt    primitive.DateTime  `bson:"created_at" json:"created_at"`
 }

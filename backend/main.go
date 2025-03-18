@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	fmt.Println("welcome to examify backend")
+	fmt.Println("Welcome to Examify backend")
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
@@ -29,17 +29,12 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	routes.AuthRoutes(r)
-	routes.ExamRoutes(r)
 	routes.AnswerSheetRoutes(r)
-
-	r.SetTrustedProxies(nil) // Only for development
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	fmt.Println("Server running on the port: ", port)
+	fmt.Println("Server running on port:", port)
 	r.Run(":" + port)
-
 }

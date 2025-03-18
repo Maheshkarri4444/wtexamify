@@ -11,5 +11,11 @@ func AnswerSheetRoutes(router *gin.Engine) {
 	{
 		answersheet.POST("/create", middleware.StudentMiddleware(), controllers.CreateAnswerSheet)
 		answersheet.PUT("/submit", middleware.StudentMiddleware(), controllers.UpdateExam)
+
+		answersheet.PUT("/answersheet/:id/assigncopied", middleware.StudentMiddleware(), controllers.AssignCopied)
+		answersheet.PUT("/answersheet/:id/removecopied", middleware.StudentMiddleware(), controllers.RemoveCopied)
 	}
+
+	router.GET("/watch/answersheets", controllers.WatchAnswerSheets) // WebSocket connection
+	router.PUT("/refresh/answersheet/:id", controllers.RefreshAnswerSheet)
 }
