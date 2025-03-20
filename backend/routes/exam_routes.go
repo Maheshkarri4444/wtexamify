@@ -7,10 +7,13 @@ import (
 )
 
 func ExamRoutes(r *gin.Engine) {
-	exam := r.Group("/auth")
+	exam := r.Group("/exam")
 	{
 		exam.POST("/exam", middleware.TeacherMiddleware(), controllers.CreateExam)
 		exam.PUT("/exam/:id", middleware.TeacherMiddleware(), controllers.UpdateExam)
+		exam.GET("/exams/started", middleware.StudentMiddleware(), controllers.GetAllStartedExams)
+		exam.GET("/teacher/:id/exams", middleware.TeacherMiddleware(), controllers.GetExamsByTeacherContainerID)
+		exam.GET("/getexam/:id", middleware.TeacherMiddleware(), controllers.GetExam)
 
 	}
 

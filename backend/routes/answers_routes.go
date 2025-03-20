@@ -14,6 +14,10 @@ func AnswerSheetRoutes(router *gin.Engine) {
 
 		answersheet.PUT("/answersheet/:id/assigncopied", middleware.StudentMiddleware(), controllers.AssignCopied)
 		answersheet.PUT("/answersheet/:id/removecopied", middleware.StudentMiddleware(), controllers.RemoveCopied)
+
+		answersheet.GET("/submitted/:examID", middleware.TeacherMiddleware(), controllers.GetAllSubmittedAnswerSheets)
+		answersheet.GET("/:id", middleware.TeacherMiddleware(), controllers.GetAnswerSheetByID)
+
 	}
 
 	router.GET("/watch/answersheets", controllers.WatchAnswerSheets) // WebSocket connection

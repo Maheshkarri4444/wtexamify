@@ -29,7 +29,10 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
+	routes.AuthRoutes(r)
 	routes.AnswerSheetRoutes(r)
+	routes.ExamRoutes(r)
+	routes.AiRoutes(r)
 
 	port := os.Getenv("PORT")
 	if port == "" {

@@ -320,3 +320,49 @@ func RemoveCopied(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Copied removed successfully"})
 }
+
+func GetAllSubmittedAnswerSheets(c *gin.Context) {
+	examID, err := primitive.ObjectIDFromHex(c.Param("examID"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid exam ID"})
+		return
+	}
+
+	// Find submitted answer sheets
+	var answerSheets []models.AnswerSheet
+	cursor, err := answerSheetCollection.Find(context.TODO(), bson.M{
+		"exam_id":       examID,
+		"submit_status": true, // Only fetch submitted answer sheets
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch answer sheets"})
+		return
+	}
+	defer cursor.Close(context.TODO())
+
+	// Decode answer sheets
+	if err := cursor.All(context.TODO(), &answerSheets); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error processing data"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"submitted_answersheets": answerSheets})
+}
+
+// GetAnswerSheetByID retrieves a specific answer sheet by ID
+func GetAnswerSheetByID(c *gin.Context) {
+	answerSheetID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid answer sheet ID"})
+		return
+	}
+
+	var answerSheet models.AnswerSheet
+	err = answerSheetCollection.FindOne(context.TODO(), bson.M{"_id": answerSheetID}).Decode(&answerSheet)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Answer sheet not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"answerSheet": answerSheet})
+}

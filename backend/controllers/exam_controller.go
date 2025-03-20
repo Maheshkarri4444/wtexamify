@@ -25,6 +25,14 @@ func CreateExam(c *gin.Context) {
 		return
 	}
 
+	// Extract teacher container ID from context
+	containerID, exists := c.Get("container_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized user"})
+		return
+	}
+	containerObjID, _ := containerID.(primitive.ObjectID)
+
 	exam.ID = primitive.NewObjectID()
 	exam.Status = "stop" // Default status
 	exam.ExamType = strings.ToLower(exam.ExamType)
@@ -39,6 +47,14 @@ func CreateExam(c *gin.Context) {
 	_, err := examCollection.InsertOne(context.TODO(), exam)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create exam"})
+		return
+	}
+
+	// Update TeacherContainer to store the created ExamID
+	update := bson.M{"$push": bson.M{"exams": bson.M{"exam_id": exam.ID}}}
+	_, err = teacherContainerCollection.UpdateOne(context.TODO(), bson.M{"_id": containerObjID}, update)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update teacher container"})
 		return
 	}
 
@@ -97,4 +113,81 @@ func UpdateExam(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Exam updated successfully"})
+}
+
+func GetAllStartedExams(c *gin.Context) {
+	var exams []models.Exam
+
+	cursor, err := examCollection.Find(context.TODO(), bson.M{"status": "start"})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch exams"})
+		return
+	}
+	defer cursor.Close(context.TODO())
+
+	if err = cursor.All(context.TODO(), &exams); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode exams"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"exams": exams})
+}
+
+func GetExamsByTeacherContainerID(c *gin.Context) {
+	// fmt.Println("called")
+	containerID := c.Param("id")
+	containerObjID, err := primitive.ObjectIDFromHex(containerID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid container ID"})
+		return
+	}
+
+	var teacherContainer models.TeacherContainer
+	err = teacherContainerCollection.FindOne(context.TODO(), bson.M{"_id": containerObjID}).Decode(&teacherContainer)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Teacher container not found"})
+		return
+	}
+
+	var exams []models.Exam
+	examIDs := []primitive.ObjectID{}
+	for _, exam := range teacherContainer.Exams {
+		examIDs = append(examIDs, exam.ExamID)
+	}
+
+	cursor, err := examCollection.Find(context.TODO(), bson.M{"_id": bson.M{"$in": examIDs}})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch exams"})
+		return
+	}
+	defer cursor.Close(context.TODO())
+
+	if err = cursor.All(context.TODO(), &exams); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode exams"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"exams": exams})
+}
+
+func GetExam(c *gin.Context) {
+	examID := c.Param("id")
+	objID, err := primitive.ObjectIDFromHex(examID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid exam ID"})
+		return
+	}
+
+	var exam models.Exam
+	err = examCollection.FindOne(context.TODO(), bson.M{"_id": objID}).Decode(&exam)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Exam not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch exam"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"exam": exam})
 }
