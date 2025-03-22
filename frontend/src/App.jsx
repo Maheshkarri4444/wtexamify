@@ -6,6 +6,7 @@ import StudentPanel from './pages/StudentPanel';
 import CreateExam from './pages/CreateExam';
 import EditExam from './pages/EditExam';
 import LiveExam from './pages/LiveExam';
+import ExamSession from './pages/ExamSession';
 import ProtectedRoute from './components/ProtectedRoute';
 import GoogleCallback from './pages/GoogleCallback';
 
@@ -63,6 +64,11 @@ function App() {
         <Route path="/live-exam/:id" element={
           <ProtectedRoute role="teacher">
             <LiveExam />
+          </ProtectedRoute>
+        } />
+        <Route path="/exam-session/:id" element={
+          <ProtectedRoute role="student">
+            <ExamSession />
           </ProtectedRoute>
         } />
 

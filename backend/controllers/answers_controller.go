@@ -39,6 +39,23 @@ func CreateAnswerSheet(c *gin.Context) {
 		return
 	}
 
+	// Check if an answer sheet already exists for this exam and student
+	var existingAnswerSheet models.AnswerSheet
+	err = answerSheetCollection.FindOne(context.TODO(), bson.M{
+		"exam_id":       examID,
+		"student_email": studentEmail,
+	}).Decode(&existingAnswerSheet)
+
+	if err == nil {
+		// Answer sheet already exists, return it
+		c.JSON(http.StatusOK, gin.H{
+			"message":      "Answer sheet already exists",
+			"answerSheet":  existingAnswerSheet,
+			"container_id": containerID,
+		})
+		return
+	}
+
 	// Fetch the exam data
 	var exam models.Exam
 	err = examCollection.FindOne(context.TODO(), bson.M{"_id": examID}).Decode(&exam)
