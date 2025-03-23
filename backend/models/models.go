@@ -30,14 +30,24 @@ type TeacherContainer struct {
 	} `bson:"exams" json:"exams"`
 }
 
+type QuestionSet struct {
+	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	ExamID    primitive.ObjectID `bson:"exam_id" json:"exam_id"`
+	ExamType  string             `bson:"exam_type" json:"exam_type"`
+	SetNumber int                `bson:"set_number" json:"set_number"`
+	Questions []string           `bson:"questions" json:"questions"`
+	CreatedAt primitive.DateTime `bson:"created_at,omitempty" json:"created_at"`
+}
+
 type Exam struct {
 	ID           primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
 	Name         string               `bson:"name" json:"name"`
 	Duration     int                  `bson:"duration" json:"duration"`
 	Questions    []string             `bson:"questions" json:"questions"`
-	Status       string               `bson:"status" json:"status"`       // Enum: "start", "stop"
-	ExamType     string               `bson:"exam_type" json:"exam_type"` // Enum: "internal", "external", "viva"
+	Status       string               `bson:"status" json:"status"`
+	ExamType     string               `bson:"exam_type" json:"exam_type"`
 	AnswerSheets []primitive.ObjectID `bson:"answer_sheets" json:"answer_sheets"`
+	Sets         []primitive.ObjectID `bson:"sets" json:"sets"` // Added field
 	CreatedAt    primitive.DateTime   `bson:"created_at,omitempty" json:"created_at"`
 	UpdatedAt    primitive.DateTime   `bson:"updated_at,omitempty" json:"updated_at"`
 }
@@ -45,8 +55,9 @@ type Exam struct {
 type AnswerSheet struct {
 	ID           primitive.ObjectID  `bson:"_id,omitempty" json:"id"`
 	ExamID       primitive.ObjectID  `bson:"exam_id" json:"exam_id"`
-	ExamType     string              `bson:"exam_type" json:"exam_type"` // New field
+	ExamType     string              `bson:"exam_type" json:"exam_type"`
 	Duration     int                 `bson:"duration" json:"duration"`
+	SetNumber    int                 `bson:"set_number" json:"set_number"` // New field
 	StudentName  string              `bson:"student_name" json:"student_name"`
 	StudentEmail string              `bson:"student_email" json:"student_email"`
 	Data         []map[string]string `bson:"data" json:"data"`

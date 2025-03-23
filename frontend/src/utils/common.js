@@ -65,7 +65,8 @@ const Allapi = {
   aiScore: {
     url: `${backapi}/ai/generate`,
     method: "POST",
-  }
+  },
+  backapi
 };
 
 export default Allapi;

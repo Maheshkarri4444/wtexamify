@@ -34,7 +34,7 @@ func VerifyJWT(tokenString string) (jwt.MapClaims, error) {
 	return claims, nil
 }
 
-func AuthMiddleware(requiredRole string) gin.HandlerFunc {
+func AuthMiddleware(allowedRoles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString := c.GetHeader("Authorization")
 		if tokenString == "" {
@@ -63,7 +63,7 @@ func AuthMiddleware(requiredRole string) gin.HandlerFunc {
 			ID          primitive.ObjectID `bson:"_id"`
 			Name        string             `bson:"name,omitempty" json:"name"`
 			Email       string             `bson:"email" json:"email"`
-			Image       string             `bson:"image,omitempty" json:"image,omitempty"` // Google profile image URL
+			Image       string             `bson:"image,omitempty" json:"image,omitempty"`
 			Role        string             `bson:"role"`
 			ContainerID primitive.ObjectID `bson:"contianer_id"`
 		}
@@ -76,16 +76,27 @@ func AuthMiddleware(requiredRole string) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		// fmt.Println("userrole: ", user.Role)
-		// fmt.Println("required role: ", requiredRole)
-		// Check if user has the required role
-		if user.Role != requiredRole {
+
+		fmt.Println("user role:", user.Role)
+		fmt.Println("allowed roles:", allowedRoles)
+
+		// Check if user role is in the list of allowed roles
+		roleAllowed := false
+		for _, role := range allowedRoles {
+			if user.Role == role {
+				roleAllowed = true
+				break
+			}
+		}
+
+		if !roleAllowed {
+			fmt.Println("forbidden called")
 			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 			c.Abort()
 			return
 		}
 
-		// Set user ID and role in context
+		// Set user details in context
 		c.Set("user_id", user.ID)
 		c.Set("name", user.Name)
 		c.Set("email", user.Email)
@@ -95,10 +106,15 @@ func AuthMiddleware(requiredRole string) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
 func StudentMiddleware() gin.HandlerFunc {
 	return AuthMiddleware("student")
 }
 
 func TeacherMiddleware() gin.HandlerFunc {
 	return AuthMiddleware("teacher")
+}
+
+func StudentOrTeacherMiddleware() gin.HandlerFunc {
+	return AuthMiddleware("student", "teacher")
 }

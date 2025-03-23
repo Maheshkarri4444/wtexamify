@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Plus, Clock, BookOpen, Download } from 'lucide-react';
+import { Plus, Clock, BookOpen, Download, FileText, Loader } from 'lucide-react';
 import Allapi from '../utils/common';
 
 const TeacherPanel = () => {
@@ -10,6 +10,11 @@ const TeacherPanel = () => {
   const [selectedExam, setSelectedExam] = useState(null);
   const [answerSheets, setAnswerSheets] = useState([]);
   const [showAnswerSheets, setShowAnswerSheets] = useState(false);
+  const [questionSets, setQuestionSets] = useState([]);
+  const [showQuestionSets, setShowQuestionSets] = useState(false);
+  const [loadingAnswerSheets, setLoadingAnswerSheets] = useState(false);
+  const [loadingQuestionSets, setLoadingQuestionSets] = useState(false);
+  const [downloadingSheets, setDownloadingSheets] = useState({});
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('user'));
 
@@ -25,6 +30,7 @@ const TeacherPanel = () => {
           headers: {
             Authorization: localStorage.getItem('token'),
           },
+          method: "GET"
         }
       );
       const data = await response.json();
@@ -57,9 +63,7 @@ const TeacherPanel = () => {
       }
       
       await fetchExams();
-      if (newStatus === 'start') {
-        navigate(`/live-exam/${examId}`);
-      }
+      toast.success(`Exam ${newStatus === 'start' ? 'started' : 'stopped'} successfully`);
     } catch (error) {
       toast.error('Failed to update exam status');
     }
@@ -69,13 +73,14 @@ const TeacherPanel = () => {
     try {
       setShowAnswerSheets(true);
       setSelectedExam(examId);
+      setLoadingAnswerSheets(true);
       const response = await fetch(
         Allapi.getSubmittedAnswerSheets.url(examId),
         {
           headers: {
             Authorization: localStorage.getItem('token'),
           },
-          method:"GET"
+          method: "GET"
         }
       );
       
@@ -88,18 +93,50 @@ const TeacherPanel = () => {
       setAnswerSheets(data.submitted_answersheets || []);
     } catch (error) {
       toast.error('Failed to fetch answer sheets');
+    } finally {
+      setLoadingAnswerSheets(false);
+    }
+  };
+
+  const fetchQuestionSets = async (examId) => {
+    try {
+      setShowQuestionSets(true);
+      setSelectedExam(examId);
+      setLoadingQuestionSets(true);
+      const response = await fetch(
+        `${Allapi.backapi}/exam/getsets/${examId}`,
+        {
+          headers: {
+            Authorization: localStorage.getItem('token'),
+          },
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch question sets');
+      }
+
+      const data = await response.json();
+      setQuestionSets(data.question_sets || []);
+    } catch (error) {
+      toast.error('Failed to fetch question sets');
+      setShowQuestionSets(false);
+    } finally {
+      setLoadingQuestionSets(false);
     }
   };
 
   const downloadPDF = async (answerSheetId) => {
     try {
+      setDownloadingSheets(prev => ({ ...prev, [answerSheetId]: true }));
+
       const response = await fetch(
         Allapi.getAnswerSheetById.url(answerSheetId),
         {
           headers: {
             Authorization: localStorage.getItem('token'),
           },
-          method:"GET"
+          method: "GET"
         }
       );
       
@@ -107,17 +144,66 @@ const TeacherPanel = () => {
         throw new Error('Failed to download PDF');
       }
 
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `answersheet-${answerSheetId}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      const data = await response.json();
+      
+      const printContent = `
+        <html>
+          <head>
+            <title>Answer Sheet</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 20px; }
+              .question { margin-bottom: 20px; }
+              .answer { margin-left: 20px; color: #444; }
+              @media print {
+                body { padding: 0; }
+              }
+            </style>
+          </head>
+          <body>
+            <h1>Answer Sheet</h1>
+            <p><strong>Student:</strong> ${data.answerSheet.student_name}</p>
+            <p><strong>Set Number:</strong> ${data.answerSheet.set_number}</p>
+            <hr style="margin: 20px 0;">
+            ${data.answerSheet.data.map((item, index) => {
+              const question = Object.keys(item)[0];
+              const answer = item[question];
+              return `
+                <div class="question">
+                  <h3>Question ${index + 1}:</h3>
+                  <p>${question}</p>
+                  <div class="answer">
+                    <strong>Answer:</strong><br>
+                    ${answer || 'No answer provided'}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </body>
+        </html>
+      `;
+
+      // Create a hidden iframe for printing
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+      
+      iframe.contentWindow.document.open();
+      iframe.contentWindow.document.write(printContent);
+      iframe.contentWindow.document.close();
+
+      // Wait for content to load
+      iframe.onload = () => {
+        iframe.contentWindow.print();
+        // Remove the iframe after printing
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 100);
+      };
+
     } catch (error) {
-      toast.error('Failed to download PDF');
+      toast.error(error.message || 'Failed to download PDF');
+    } finally {
+      setDownloadingSheets(prev => ({ ...prev, [answerSheetId]: false }));
     }
   };
 
@@ -199,12 +285,20 @@ const TeacherPanel = () => {
                       {exam.status === 'start' ? 'Stop' : 'Start'}
                     </button>
                   </div>
-                  <button
-                    onClick={() => fetchAnswerSheets(exam.id)}
-                    className="w-full px-3 py-2 text-sm text-purple-400 bg-purple-500/20 rounded-lg hover:bg-purple-500/30 transition-all duration-300"
-                  >
-                    View Answer Sheets
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => fetchAnswerSheets(exam.id)}
+                      className="flex-1 px-3 py-2 text-sm text-purple-400 bg-purple-500/20 rounded-lg hover:bg-purple-500/30 transition-all duration-300"
+                    >
+                      View Answer Sheets
+                    </button>
+                    <button
+                      onClick={() => fetchQuestionSets(exam.id)}
+                      className="flex-1 px-3 py-2 text-sm text-yellow-400 bg-yellow-500/20 rounded-lg hover:bg-yellow-500/30 transition-all duration-300"
+                    >
+                      View Sets
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -219,7 +313,6 @@ const TeacherPanel = () => {
           )}
         </div>
 
-        {/* Answer Sheets Modal */}
         {showAnswerSheets && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
             <div className="bg-gray-800 rounded-xl p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto">
@@ -237,7 +330,11 @@ const TeacherPanel = () => {
                 </button>
               </div>
 
-              {answerSheets.length > 0 ? (
+              {loadingAnswerSheets ? (
+                <div className="flex justify-center items-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                </div>
+              ) : answerSheets.length > 0 ? (
                 <div className="space-y-4">
                   {answerSheets.map((sheet) => (
                     <div
@@ -247,19 +344,81 @@ const TeacherPanel = () => {
                       <div>
                         <h3 className="text-white font-medium">{sheet.student_name}</h3>
                         <p className="text-gray-400 text-sm">{sheet.student_email}</p>
+                        <p className="text-gray-400 text-sm">Set: {sheet.set_number}</p>
                       </div>
                       <button
                         onClick={() => downloadPDF(sheet.id)}
+                        disabled={downloadingSheets[sheet.id]}
                         className="flex items-center px-3 py-2 text-sm text-blue-400 bg-blue-500/20 rounded-lg hover:bg-blue-500/30 transition-all duration-300"
                       >
-                        <Download className="w-4 h-4 mr-2" />
-                        Download PDF
+                        {downloadingSheets[sheet.id] ? (
+                          <Loader className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <span className="flex items-center">
+                            <Download className="w-4 h-4 mr-2" />
+                            Download PDF
+                          </span>
+                        )}
                       </button>
                     </div>
                   ))}
                 </div>
               ) : (
                 <p className="text-center text-gray-400">No submitted answer sheets found</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {showQuestionSets && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+            <div className="bg-gray-800 rounded-xl p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-white">Question Sets</h2>
+                <button
+                  onClick={() => {
+                    setShowQuestionSets(false);
+                    setSelectedExam(null);
+                    setQuestionSets([]);
+                  }}
+                  className="text-gray-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {loadingQuestionSets ? (
+                <div className="flex justify-center items-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                </div>
+              ) : questionSets.length > 0 ? (
+                <div className="space-y-6">
+                  {questionSets.map((set) => (
+                    <div
+                      key={set.id}
+                      className="bg-gray-700 rounded-lg p-4"
+                    >
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-medium text-white">Set {set.set_number}</h3>
+                        <span className="px-2 py-1 text-sm rounded-full bg-blue-500/20 text-blue-400">
+                          {set.exam_type}
+                        </span>
+                      </div>
+                      <div className="space-y-3">
+                        {set.questions.map((question, index) => (
+                          <div key={index} className="bg-gray-800 rounded p-3">
+                            <p className="text-gray-300">
+                              <span className="text-blue-400 mr-2">{index + 1}.</span>
+                              {question}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-gray-400">No question sets found</p>
               )}
             </div>
           </div>

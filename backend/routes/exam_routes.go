@@ -13,8 +13,8 @@ func ExamRoutes(r *gin.Engine) {
 		exam.PUT("/exam/:id", middleware.TeacherMiddleware(), controllers.UpdateExam)
 		exam.GET("/exams/started", middleware.StudentMiddleware(), controllers.GetAllStartedExams)
 		exam.GET("/teacher/:id/exams", middleware.TeacherMiddleware(), controllers.GetExamsByTeacherContainerID)
-		exam.GET("/getexam/:id", middleware.TeacherMiddleware(), controllers.GetExam)
-
+		exam.GET("/getexam/:id", middleware.StudentOrTeacherMiddleware(), controllers.GetExam)
+		exam.GET("/getsets/:examID", middleware.TeacherMiddleware(), controllers.GetSetsByExamID)
 	}
 
 }

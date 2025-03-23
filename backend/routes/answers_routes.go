@@ -10,13 +10,13 @@ func AnswerSheetRoutes(router *gin.Engine) {
 	answersheet := router.Group("/answersheets")
 	{
 		answersheet.POST("/create", middleware.StudentMiddleware(), controllers.CreateAnswerSheet)
-		answersheet.PUT("/submit", middleware.StudentMiddleware(), controllers.UpdateExam)
+		answersheet.PUT("/submit", middleware.StudentMiddleware(), controllers.SubmitAnswerSheet)
 
 		answersheet.PUT("/answersheet/:id/assigncopied", middleware.StudentMiddleware(), controllers.AssignCopied)
 		answersheet.PUT("/answersheet/:id/removecopied", middleware.StudentMiddleware(), controllers.RemoveCopied)
 
 		answersheet.GET("/submitted/:examID", middleware.TeacherMiddleware(), controllers.GetAllSubmittedAnswerSheets)
-		answersheet.GET("/:id", middleware.TeacherMiddleware(), controllers.GetAnswerSheetByID)
+		answersheet.GET("/:id", middleware.StudentOrTeacherMiddleware(), controllers.GetAnswerSheetByID)
 
 	}
 

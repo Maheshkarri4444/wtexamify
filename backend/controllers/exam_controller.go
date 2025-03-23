@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -15,8 +16,30 @@ import (
 )
 
 var examCollection *mongo.Collection = config.GetCollection(config.Client, "exams")
+var questionSetCollection *mongo.Collection = config.GetCollection(config.Client, "questionsets")
 
-// CreateExam - Create a new exam
+func generateQuestionSets(questions []string, examType string) [][]string {
+	var setSize int
+	if examType == "viva" {
+		setSize = 10
+	} else {
+		setSize = 3
+	}
+
+	if len(questions) < setSize {
+		return nil // Not enough questions to form a single set
+	}
+
+	rand.Shuffle(len(questions), func(i, j int) { questions[i], questions[j] = questions[j], questions[i] })
+	var result [][]string
+
+	for i := 0; i+setSize <= len(questions); i += setSize {
+		result = append(result, questions[i:i+setSize])
+	}
+
+	return result
+}
+
 func CreateExam(c *gin.Context) {
 	var exam models.Exam
 
@@ -25,7 +48,6 @@ func CreateExam(c *gin.Context) {
 		return
 	}
 
-	// Extract teacher container ID from context
 	containerID, exists := c.Get("container_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized user"})
@@ -34,23 +56,45 @@ func CreateExam(c *gin.Context) {
 	containerObjID, _ := containerID.(primitive.ObjectID)
 
 	exam.ID = primitive.NewObjectID()
-	exam.Status = "stop" // Default status
+	exam.Status = "stop"
 	exam.ExamType = strings.ToLower(exam.ExamType)
 	if exam.ExamType != "internal" && exam.ExamType != "external" && exam.ExamType != "viva" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid exam type"})
 		return
 	}
 
+	exam.AnswerSheets = []primitive.ObjectID{}
 	exam.CreatedAt = primitive.NewDateTimeFromTime(time.Now())
 	exam.UpdatedAt = primitive.NewDateTimeFromTime(time.Now())
 
+	// Generate question sets
+	questionSets := generateQuestionSets(exam.Questions, exam.ExamType)
+	var setIDs []primitive.ObjectID
+
+	for i, questions := range questionSets {
+		questionSet := models.QuestionSet{
+			ID:        primitive.NewObjectID(),
+			ExamID:    exam.ID,
+			ExamType:  exam.ExamType,
+			SetNumber: i + 1,
+			Questions: questions,
+			CreatedAt: primitive.NewDateTimeFromTime(time.Now()),
+		}
+		_, err := questionSetCollection.InsertOne(context.TODO(), questionSet)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create question set"})
+			return
+		}
+		setIDs = append(setIDs, questionSet.ID)
+	}
+
+	exam.Sets = setIDs
 	_, err := examCollection.InsertOne(context.TODO(), exam)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create exam"})
 		return
 	}
 
-	// Update TeacherContainer to store the created ExamID
 	update := bson.M{"$push": bson.M{"exams": bson.M{"exam_id": exam.ID}}}
 	_, err = teacherContainerCollection.UpdateOne(context.TODO(), bson.M{"_id": containerObjID}, update)
 	if err != nil {
@@ -61,7 +105,6 @@ func CreateExam(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"message": "Exam created successfully", "exam": exam})
 }
 
-// UpdateExam - Update an existing exam
 func UpdateExam(c *gin.Context) {
 	examID := c.Param("id")
 	objID, err := primitive.ObjectIDFromHex(examID)
@@ -91,9 +134,6 @@ func UpdateExam(c *gin.Context) {
 	if updateData.Duration > 0 {
 		updateFields["duration"] = updateData.Duration
 	}
-	if len(updateData.Questions) > 0 {
-		updateFields["questions"] = updateData.Questions
-	}
 	if updateData.Status == "start" || updateData.Status == "stop" {
 		updateFields["status"] = updateData.Status
 	}
@@ -106,15 +146,53 @@ func UpdateExam(c *gin.Context) {
 		updateFields["exam_type"] = examType
 	}
 
-	result, err := examCollection.UpdateOne(context.TODO(), bson.M{"_id": objID}, bson.M{"$set": updateFields})
-	if err != nil || result.MatchedCount == 0 {
+	if len(updateData.Questions) > 0 {
+		// Fetch current exam to get existing sets
+		var existingExam models.Exam
+		err := examCollection.FindOne(context.TODO(), bson.M{"_id": objID}).Decode(&existingExam)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch existing exam"})
+			return
+		}
+
+		// Delete only the records in the exam.sets, not the question sets collection
+		_, err = questionSetCollection.DeleteMany(context.TODO(), bson.M{"_id": bson.M{"$in": existingExam.Sets}})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove existing question sets from exam"})
+			return
+		}
+
+		// Generate new question sets
+		questionSets := generateQuestionSets(updateData.Questions, updateData.ExamType)
+		var setIDs []primitive.ObjectID
+		for i, questions := range questionSets {
+			questionSet := models.QuestionSet{
+				ID:        primitive.NewObjectID(),
+				ExamID:    objID,
+				ExamType:  updateData.ExamType,
+				SetNumber: i + 1,
+				Questions: questions,
+				CreatedAt: primitive.NewDateTimeFromTime(time.Now()),
+			}
+			_, err := questionSetCollection.InsertOne(context.TODO(), questionSet)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create question set"})
+				return
+			}
+			setIDs = append(setIDs, questionSet.ID)
+		}
+
+		updateFields["sets"] = setIDs
+	}
+
+	_, err = examCollection.UpdateOne(context.TODO(), bson.M{"_id": objID}, bson.M{"$set": updateFields})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update exam"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Exam updated successfully"})
+	c.JSON(http.StatusOK, gin.H{"message": "Exam updated successfully, question sets regenerated if needed"})
 }
-
 func GetAllStartedExams(c *gin.Context) {
 	var exams []models.Exam
 
@@ -190,4 +268,27 @@ func GetExam(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"exam": exam})
+}
+
+func GetSetsByExamID(c *gin.Context) {
+	examID, err := primitive.ObjectIDFromHex(c.Param("examID"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid exam ID"})
+		return
+	}
+
+	var sets []models.QuestionSet
+	cursor, err := questionSetCollection.Find(context.TODO(), bson.M{"exam_id": examID})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch question sets"})
+		return
+	}
+	defer cursor.Close(context.TODO())
+
+	if err = cursor.All(context.TODO(), &sets); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode question sets"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"question_sets": sets})
 }
