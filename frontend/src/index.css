@@ -23,3 +23,7 @@
 .animate-score-reveal {
   animation: score-reveal 1s ease-out forwards;
 }
+
+* {
+  user-select: none;
+}

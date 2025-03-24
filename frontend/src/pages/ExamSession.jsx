@@ -16,6 +16,7 @@ const ExamSession = () => {
   const [timeLeft, setTimeLeft] = useState(null);
   const [showRefreshModal, setShowRefreshModal] = useState(false);
   const [refreshCode, setRefreshCode] = useState('');
+  const [refreshLoading, setRefreshLoading] = useState(false);
   const [aiEvaluating, setAiEvaluating] = useState(false);
   const [aiScore, setAiScore] = useState(null);
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
@@ -122,6 +123,7 @@ const ExamSession = () => {
     }
 
     try {
+      setRefreshLoading(true);
       const response = await fetch(Allapi.refreshAnswerSheet.url(answerSheetId), {
         method: 'PUT',
         headers: {
@@ -139,6 +141,8 @@ const ExamSession = () => {
       toast.success('Questions refreshed successfully');
     } catch (error) {
       toast.error('Failed to refresh questions');
+    } finally {
+      setRefreshLoading(false);
     }
   };
 
@@ -506,9 +510,17 @@ const ExamSession = () => {
               </button>
               <button
                 onClick={handleRefreshQuestions}
-                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                disabled={refreshLoading}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center"
               >
-                Refresh
+                {refreshLoading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    Refreshing...
+                  </>
+                ) : (
+                  'Refresh'
+                )}
               </button>
             </div>
           </div>
