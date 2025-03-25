@@ -192,7 +192,7 @@ const ExamSession = () => {
 
   const handleSubmit = async () => {
     try {
-      setLoading(true);
+      // setLoading(true);
       setAiEvaluating(true);
       let aiScore = null;
       
@@ -234,6 +234,7 @@ const ExamSession = () => {
       });
 
       // Submit the exam
+      setLoading(true)
       const response = await fetch(Allapi.submitAnswerSheet.url, {
         method: 'PUT',
         headers: {
@@ -537,3 +538,4 @@ const ExamSession = () => {
 };
 
 export default ExamSession;
+

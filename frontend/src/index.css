@@ -2,28 +2,38 @@
 @tailwind components;
 @tailwind utilities;
 
+
+
+
+* {
+  user-select: none;
+}
+
+
 @keyframes loading-bar {
   0% { width: 0; }
   50% { width: 70%; }
-  75% { width: 85%; }
-  90% { width: 95%; }
   100% { width: 100%; }
 }
 
 @keyframes score-reveal {
-  0% { transform: scale(0.5); opacity: 0; }
-  50% { transform: scale(1.2); }
-  100% { transform: scale(1); opacity: 1; }
+  0% { 
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  50% { 
+    transform: scale(1.2);
+  }
+  100% { 
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .animate-loading-bar {
-  animation: loading-bar 3s ease-in-out infinite;
+  animation: loading-bar 2s ease-in-out infinite;
 }
 
 .animate-score-reveal {
   animation: score-reveal 1s ease-out forwards;
-}
-
-* {
-  user-select: none;
 }
