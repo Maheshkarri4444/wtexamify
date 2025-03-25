@@ -85,6 +85,7 @@ func CreateAnswerSheet(c *gin.Context) {
 		StudentEmail: studentEmail.(string),
 		Data:         data,
 		Copied:       false,
+		CopyCount:    0,
 		SubmitStatus: false,
 		CreatedAt:    primitive.NewDateTimeFromTime(time.Now()),
 	}
@@ -263,6 +264,7 @@ func AssignCopied(c *gin.Context) {
 	// Update the AnswerSheet to set copied = true
 	_, err = answerSheetCollection.UpdateOne(context.TODO(), bson.M{"_id": answerSheetID}, bson.M{
 		"$set": bson.M{"copied": true},
+		"$inc": bson.M{"copy_count": 1},
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update answer sheet"})

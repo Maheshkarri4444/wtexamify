@@ -105,5 +105,7 @@ func GetChatResponse(c *gin.Context) {
 		return
 	}
 
+	fmt.Println("response text ai:", responseText)
+
 	c.JSON(http.StatusOK, ChatResponse{Response: responseText})
 }

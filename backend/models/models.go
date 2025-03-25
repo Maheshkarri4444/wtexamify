@@ -63,6 +63,7 @@ type AnswerSheet struct {
 	Data         []map[string]string `bson:"data" json:"data"`
 	AIScore      float64             `bson:"ai_score,omitempty" json:"ai_score,omitempty"`
 	Copied       bool                `bson:"copied" json:"copied"`
+	CopyCount    int                 `bson:"copy_count" json:"copy_count"`
 	SubmitStatus bool                `bson:"submit_status" json:"submit_status"`
 	CreatedAt    primitive.DateTime  `bson:"created_at" json:"created_at"`
 }

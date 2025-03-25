@@ -565,6 +565,8 @@ const TeacherPanel = () => {
         <h2 style="margin-bottom: 20px;">Answer Sheet</h2>
         <p><strong>Student:</strong> ${answerSheet.student_name}</p>
         <p><strong>Set Number:</strong> ${answerSheet.set_number}</p>
+        <p><strong>Copy Count:</strong> ${answerSheet.copy_count}</p>
+        <p><strong>Ai Score:</strong> ${answerSheet.ai_score}</p>
         <hr style="margin: 20px 0;">
         ${answerSheet.data.map((item, index) => {
           const question = Object.keys(item)[0];
@@ -686,6 +688,8 @@ const TeacherPanel = () => {
             <h1>Answer Sheet</h1>
             <p><strong>Student:</strong> ${data.answerSheet.student_name}</p>
             <p><strong>Set Number:</strong> ${data.answerSheet.set_number}</p>
+            <p><strong>Copy Count:</strong> ${data.answerSheet.copy_count}</p>
+            <p><strong>Ai Score:</strong> ${data.answerSheet.ai_score}</p>
             <hr style="margin: 20px 0;">
             ${data.answerSheet.data.map((item, index) => {
               const question = Object.keys(item)[0];
