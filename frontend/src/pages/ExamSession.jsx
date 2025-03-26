@@ -205,19 +205,18 @@ const ExamSession = () => {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              prompt: `Please evaluate these answers and provide a single numerical score out of 100. Do not include any explanation or additional text. If all answers are wrong, return 0. Only return the number:\n${JSON.stringify(answers)}
-`,
+              prompt: `Please evaluate these answers and provide a single numerical score out of 100. Do not include any explanation or additional text. If all answers are wrong, return 0. Only return the number:\n${JSON.stringify(answers)}`,
             }),
           });
 
-          console.log("ai : ",aiResponse)
+          // console.log("ai : ",aiResponse)
 
           if (aiResponse.ok) {
             const aiData = await aiResponse.json();
-            console.log("aidata: ",aiData)
+            // console.log("aidata: ",aiData)
             aiScore = parseFloat(aiData.response);
             setAiScore(aiScore);
-            console.log("ai score: ",aiScore)
+            // console.log("ai score: ",aiScore)
             // Wait for animation to complete
             await new Promise(resolve => setTimeout(resolve, 3000));
           }

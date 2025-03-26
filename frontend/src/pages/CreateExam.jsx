@@ -18,9 +18,10 @@ const CreateExam = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+  
     setExamData(prev => ({
       ...prev,
-      [name]: name === "duration" ? Number(value) : value
+      [name]: name === "duration" ? (value === "" ? "" : Number(value)) : value
     }));
   };
 

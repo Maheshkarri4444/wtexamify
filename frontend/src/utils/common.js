@@ -17,6 +17,10 @@ const Allapi = {
     url: `${backapi}/exam/exam/:id`,
     method: "PUT",
   },
+  sendEmails: {
+    url: `${backapi}/exam/send-emails`,
+    method: "POST",
+  },
   getStartedExams: {
     url: `${backapi}/exam/exams/started`,
     method: "GET",

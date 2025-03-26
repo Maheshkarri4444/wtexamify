@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"net/http"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"gopkg.in/gomail.v2"
 )
 
 var examCollection *mongo.Collection = config.GetCollection(config.Client, "exams")
@@ -193,6 +195,7 @@ func UpdateExam(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Exam updated successfully, question sets regenerated if needed"})
 }
+
 func GetAllStartedExams(c *gin.Context) {
 	var exams []models.Exam
 
@@ -291,4 +294,52 @@ func GetSetsByExamID(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"question_sets": sets})
+}
+
+func SendEmails(c *gin.Context) {
+	// List of recipient emails
+	emails := []string{"maheshkarri2109@gmail.com", "shanmukhsatyasaiyerra27@gmail.com"}
+
+	// Email Configuration
+	smtpHost := "smtp.gmail.com" // Use your email provider's SMTP
+	smtpPort := 587
+	senderEmail := "maheshkarri2222@gmail.com" // Replace with your email
+	senderPassword := "izlw dibg dojb xpxa"    // Replace with your app password
+
+	// Email Subject & Body
+	subject := "Lab Exam Invitation"
+	link := "https://chatgpt.com/"
+	bodyTemplate := `
+		<html>
+			<body style="font-family: Arial, sans-serif; text-align: center;">
+				<h2>You are invited to write the Lab Exam</h2>
+				<p>Please click the button below to proceed:</p>
+				<a href="%s" style="display: inline-block; padding: 10px 20px; font-size: 16px; 
+					color: #fff; background-color: #007bff; text-decoration: none; border-radius: 5px;">
+					Join Exam
+				</a>
+			</body>
+		</html>
+	`
+
+	// SMTP Dialer
+	dialer := gomail.NewDialer(smtpHost, smtpPort, senderEmail, senderPassword)
+
+	// Loop through each email and send the message
+	for _, email := range emails {
+		message := gomail.NewMessage()
+		message.SetHeader("From", senderEmail)
+		message.SetHeader("To", email)
+		message.SetHeader("Subject", subject)
+		message.SetBody("text/html", fmt.Sprintf(bodyTemplate, link))
+
+		// Send Email
+		if err := dialer.DialAndSend(message); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to send email to %s", email)})
+			return
+		}
+	}
+
+	// Success response
+	c.JSON(http.StatusOK, gin.H{"message": "Emails sent successfully"})
 }
