@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	// "log"
 	"net/http"
 	"os"
 	"time"
@@ -10,16 +10,16 @@ import (
 	"github.com/Maheshkarri4444/wtexamify/routes"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
+	// "github.com/joho/godotenv"
 )
 
 func main() {
 	fmt.Println("Welcome to Examify backend")
 
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
+	// err := godotenv.Load()
+	// if err != nil {
+	// 	log.Fatal("Error loading .env file")
+	// }
 
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
@@ -44,6 +44,10 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	fmt.Println("Server running on port:", port)
-	r.Run(":" + port)
+	fmt.Println("🚀 Detected PORT:", port)
+	fmt.Println("🌍 Binding server to 0.0.0.0:" + port)
+
+	if err := r.Run("0.0.0.0:" + port); err != nil {
+		fmt.Println("❌ Server failed to start:", err)
+	}
 }
