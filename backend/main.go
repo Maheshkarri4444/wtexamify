@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 func main() {
 	fmt.Println("Welcome to Examify backend")
+
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
@@ -28,6 +30,10 @@ func main() {
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
+
+	r.GET("/", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "Server is running!"})
+	})
 
 	routes.AuthRoutes(r)
 	routes.AnswerSheetRoutes(r)
