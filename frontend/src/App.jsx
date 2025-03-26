@@ -9,6 +9,7 @@ import LiveExam from './pages/LiveExam';
 import ExamSession from './pages/ExamSession';
 import ProtectedRoute from './components/ProtectedRoute';
 import GoogleCallback from './pages/GoogleCallback';
+import NotFound from './pages/NotFound';
 
 function App() {
   // Get user from localStorage
@@ -72,9 +73,11 @@ function App() {
           </ProtectedRoute>
         } />
 
-        {/* Redirect root and unmatched routes */}
+        {/* Redirect root */}
         <Route path="/" element={<Navigate to={redirectBasedOnRole()} replace />} />
-        <Route path="*" element={<Navigate to={redirectBasedOnRole()} replace />} />
+        
+        {/* 404 route */}
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </Router>
   );
