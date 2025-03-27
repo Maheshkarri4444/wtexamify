@@ -23,8 +23,8 @@ var studentContainerCollection *mongo.Collection = config.GetCollection(config.C
 var teacherContainerCollection *mongo.Collection = config.GetCollection(config.Client, "teacher_containers")
 
 var googleOauthConfig = &oauth2.Config{
-	ClientID:     "",
-	ClientSecret: "",
+	ClientID:     "117664400321-kchnk20sjd2m9h46u0e1go3194d19uut.apps.googleusercontent.com",
+	ClientSecret: "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",
 	RedirectURL:  "http://localhost:5173/google/callback",
 	Scopes:       []string{"email", "profile"},
 	Endpoint:     google.Endpoint,
