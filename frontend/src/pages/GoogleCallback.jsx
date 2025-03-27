@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import Allapi from '../utils/common';
 
 const GoogleCallback = () => {
   const navigate = useNavigate();
@@ -13,7 +14,7 @@ const GoogleCallback = () => {
           throw new Error('No authorization code found');
         }
 
-        const response = await fetch(`http://localhost:8080/auth/googlecallback?code=${code}`);
+        const response = await fetch(`${Allapi.backapi}/auth/googlecallback?code=${code}`);
         const data = await response.json();
 
         if (!response.ok) {
