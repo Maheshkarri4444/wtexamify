@@ -7,7 +7,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -15,10 +14,10 @@ import (
 var Client *mongo.Client = createMongoClient()
 
 func createMongoClient() *mongo.Client {
-	err := godotenv.Load(".env")
-	if err != nil {
-		log.Fatalf("Error loading the file: %v", err)
-	}
+	// err := godotenv.Load(".env")
+	// if err != nil {
+	// 	log.Fatalf("Error loading the file: %v", err)
+	// }
 
 	MongodbUri := os.Getenv("MONGODB_URI")
 	if MongodbUri == "" {

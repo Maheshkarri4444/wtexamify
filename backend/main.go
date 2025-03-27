@@ -4,7 +4,6 @@ import (
 	"fmt"
 	// "log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/Maheshkarri4444/wtexamify/routes"
@@ -40,10 +39,10 @@ func main() {
 	routes.ExamRoutes(r)
 	routes.AiRoutes(r)
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+	// port := os.Getenv("PORT")
+	// if port == "" {
+	port := "8080"
+	//}
 	fmt.Println("🚀 Detected PORT:", port)
 	fmt.Println("🌍 Binding server to 0.0.0.0:" + port)
 
