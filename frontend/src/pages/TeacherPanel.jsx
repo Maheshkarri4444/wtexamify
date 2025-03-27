@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Plus, Clock, BookOpen, Download, FileText, Loader ,Mail} from 'lucide-react';
+import { Plus, Clock, BookOpen, Download, FileText, Loader, Mail } from 'lucide-react';
 import Allapi from '../utils/common';
 
 const TeacherPanel = () => {
@@ -17,13 +17,13 @@ const TeacherPanel = () => {
   const [downloadingSheets, setDownloadingSheets] = useState({});
   const [downloadingAll, setDownloadingAll] = useState(false);
   const [sendingEmails, setSendingEmails] = useState({});
+  const [loadingExamStatus, setLoadingExamStatus] = useState({});
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('user'));
 
   useEffect(() => {
     fetchExams();
   }, []);
-
 
   const handleSendEmails = async (examId) => {
     try {
@@ -72,6 +72,7 @@ const TeacherPanel = () => {
 
   const handleStatusChange = async (examId, newStatus) => {
     try {
+      setLoadingExamStatus(prev => ({ ...prev, [examId]: true }));
       const response = await fetch(
         Allapi.updateExam.url.replace(':id', examId),
         {
@@ -93,6 +94,8 @@ const TeacherPanel = () => {
       toast.success(`Exam ${newStatus === 'start' ? 'started' : 'stopped'} successfully`);
     } catch (error) {
       toast.error('Failed to update exam status');
+    } finally {
+      setLoadingExamStatus(prev => ({ ...prev, [examId]: false }));
     }
   };
 
@@ -394,13 +397,20 @@ const TeacherPanel = () => {
                     </button>
                     <button
                       onClick={() => handleStatusChange(exam.id, exam.status === 'start' ? 'stop' : 'start')}
+                      disabled={loadingExamStatus[exam.id]}
                       className={`flex-1 px-3 py-2 text-sm rounded-lg transition-all duration-300 ${
                         exam.status === 'start'
                           ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
                           : 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
                       }`}
                     >
-                      {exam.status === 'start' ? 'Stop' : 'Start'}
+                      {loadingExamStatus[exam.id] ? (
+                        <div className="flex items-center justify-center">
+                          <Loader className="w-4 h-4 animate-spin" />
+                        </div>
+                      ) : (
+                        exam.status === 'start' ? 'Stop' : 'Start'
+                      )}
                     </button>
                   </div>
                   <div className="flex gap-2">

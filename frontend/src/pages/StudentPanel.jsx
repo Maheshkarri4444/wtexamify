@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Clock, BookOpen } from 'lucide-react';
+import { Clock, BookOpen, Loader2 } from 'lucide-react';
 import Allapi from '../utils/common';
 
 const StudentPanel = () => {
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [startLoading, setStartLoading] = useState(null); // Track loading state for each exam
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('user'));
 
@@ -33,6 +34,8 @@ const StudentPanel = () => {
 
   const startExam = async (examId) => {
     try {
+      setStartLoading(examId); // Set loading state for the clicked exam
+
       const response = await fetch(Allapi.createAnswerSheet.url, {
         method: 'POST',
         headers: {
@@ -49,6 +52,8 @@ const StudentPanel = () => {
       navigate(`/exam-session/${data.answerSheet.id}`);
     } catch (error) {
       toast.error(error.message || 'Failed to start exam');
+    } finally {
+      setStartLoading(null); // Reset loading state
     }
   };
 
@@ -104,9 +109,20 @@ const StudentPanel = () => {
                 </div>
                 <button
                   onClick={() => startExam(exam.id)}
-                  className="w-full px-4 py-2 text-green-400 bg-green-500/20 rounded-lg hover:bg-green-500/30 transition-all duration-300"
+                  disabled={startLoading === exam.id}
+                  className={`w-full px-4 py-2 rounded-lg transition-all duration-300
+                    ${startLoading === exam.id
+                      ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                      : 'text-green-400 bg-green-500/20 hover:bg-green-500/30'}`}
                 >
-                  Start Exam
+                  {startLoading === exam.id ? (
+                    <div className="flex items-center justify-center">
+                      <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                      Starting...
+                    </div>
+                  ) : (
+                    'Start Exam'
+                  )}
                 </button>
               </div>
             </div>
