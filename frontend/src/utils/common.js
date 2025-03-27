@@ -1,80 +1,82 @@
-const backendOptions = [
+const backends = [
   "https://wtexamifybackend1.onrender.com",
-  "https://wtexamifybackend2.onrender.com"
+  "https://wtexamifybackend2.onrender.com",
 ];
 
-// Function to select a backend randomly or in a round-robin manner
-const getBackend = () => backendOptions[Math.floor(Math.random() * backendOptions.length)];
+const getRandomBackend = () => backends[Math.floor(Math.random() * backends.length)];
+
+const backapi = getRandomBackend();
 
 const Allapi = {
   googleLogin: {
-    url: () => `${getBackend()}/auth/google`,
+    url: `${backapi}/auth/google`,
     method: "GET",
   },
   googleCallback: {
-    url: () => `${getBackend()}/auth/googlecallback`,
+    url: `${backapi}/auth/googlecallback`,
     method: "GET",
   },
   createExam: {
-    url: () => `${getBackend()}/exam/exam`,
+    url: `${backapi}/exam/exam`,
     method: "POST",
   },
   updateExam: {
-    url: (id) => `${getBackend()}/exam/exam/${id}`,
+    url: `${backapi}/exam/exam/:id`,
     method: "PUT",
   },
   sendEmails: {
-    url: () => `${getBackend()}/exam/send-emails`,
+    url: `${backapi}/exam/send-emails`,
     method: "POST",
   },
   getStartedExams: {
-    url: () => `${getBackend()}/exam/exams/started`,
+    url: `${backapi}/exam/exams/started`,
     method: "GET",
   },
   getTeacherExams: {
-    url: (id) => `${getBackend()}/exam/teacher/${id}/exams`,
+    url: (id) => `${backapi}/exam/teacher/${id}/exams`,
     method: "GET",
   },
   watchAnswerSheets: {
-    url: () => `${getBackend()}/watch/answersheets`,
+    url: `${backapi}/watch/answersheets`,
     method: "GET",
   },
   getExam: {
-    url: (id) => `${getBackend()}/exam/getexam/${id}`,
+    url: (id) => `${backapi}/exam/getexam/${id}`,
     method: "GET",
   },
   getSubmittedAnswerSheets: {
-    url: (id) => `${getBackend()}/answersheets/submitted/${id}`,
+    url: (id) => `${backapi}/answersheets/submitted/${id}`,
     method: "GET",
   },
   getAnswerSheetById: {
-    url: (id) => `${getBackend()}/answersheets/${id}`,
+    url: (id) => `${backapi}/answersheets/${id}`,
     method: "GET",
   },
   createAnswerSheet: {
-    url: () => `${getBackend()}/answersheets/create`,
+    url: `${backapi}/answersheets/create`,
     method: "POST",
   },
   submitAnswerSheet: {
-    url: () => `${getBackend()}/answersheets/submit`,
+    url: `${backapi}/answersheets/submit`,
     method: "PUT",
   },
   assignCopied: {
-    url: (id) => `${getBackend()}/answersheets/answersheet/${id}/assigncopied`,
+    url: (id) => `${backapi}/answersheets/answersheet/${id}/assigncopied`,
     method: "PUT",
   },
   removeCopied: {
-    url: (id) => `${getBackend()}/answersheets/answersheet/${id}/removecopied`,
+    url: (id) => `${backapi}/answersheets/answersheet/${id}/removecopied`,
     method: "PUT",
   },
   refreshAnswerSheet: {
-    url: (id) => `${getBackend()}/refresh/answersheet/${id}`,
+    url: (id) => `${backapi}/refresh/answersheet/${id}`,
     method: "PUT",
   },
   aiScore: {
-    url: () => `${getBackend()}/ai/generate`,
+    url: `${backapi}/ai/generate`,
     method: "POST",
   },
+  backapi,
 };
 
 export default Allapi;

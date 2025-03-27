@@ -14,6 +14,7 @@ const Login = () => {
   }, [navigate]);
 
   const handleGoogleLogin = () => {
+    console.log("google login api: ",Allapi.googleLogin.url)
     window.location.href = Allapi.googleLogin.url;
   };
 
