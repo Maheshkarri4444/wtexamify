@@ -298,7 +298,7 @@ func GetSetsByExamID(c *gin.Context) {
 
 func SendEmails(c *gin.Context) {
 	// List of recipient emails
-	emails := []string{"maheshkarri2109@gmail.com", "shanmukhsatyasaiyerra27@gmail.com"}
+	emails := []string{"maheshkarri2109@gmail.com", "n210507@rguktn.ac.in"}
 
 	// Email Configuration
 	smtpHost := "smtp.gmail.com" // Use your email provider's SMTP
