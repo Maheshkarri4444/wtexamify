@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"os"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,7 +21,7 @@ type ChatResponse struct {
 }
 
 func RunChat(prompt string, chatHistory []string) (string, error) {
-	apiKey := os.Getenv("GEMINI_API_KEY")
+	apiKey := "AIzaSyDm3hTezn0HsU56c_U5FpbWvxTCiuCXGS8"
 	if apiKey == "" {
 		return "", fmt.Errorf("API key is missing")
 	}

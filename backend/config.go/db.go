@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"time"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -19,7 +18,7 @@ func createMongoClient() *mongo.Client {
 	// 	log.Fatalf("Error loading the file: %v", err)
 	// }
 
-	MongodbUri := os.Getenv("MONGODB_URI")
+	MongodbUri := "mongodb+srv://maheshkarri2109:IZRsBqCrulk68Lct@examify.vvyjv.mongodb.net/?retryWrites=true&w=majority&appName=examify"
 	if MongodbUri == "" {
 		log.Fatal("Mongodburi is not found in the env variables")
 	}
@@ -37,6 +36,6 @@ func createMongoClient() *mongo.Client {
 }
 
 func GetCollection(client *mongo.Client, collectionName string) *mongo.Collection {
-	return client.Database(os.Getenv("DB_NAME")).Collection(collectionName)
+	return client.Database("wtlabexam").Collection(collectionName)
 
 }

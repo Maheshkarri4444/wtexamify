@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -24,8 +23,8 @@ var studentContainerCollection *mongo.Collection = config.GetCollection(config.C
 var teacherContainerCollection *mongo.Collection = config.GetCollection(config.Client, "teacher_containers")
 
 var googleOauthConfig = &oauth2.Config{
-	ClientID:     "117664400321-kchnk20sjd2m9h46u0e1go3194d19uut.apps.googleusercontent.com",
-	ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+	ClientID:     "",
+	ClientSecret: "",
 	RedirectURL:  "http://localhost:5173/google/callback",
 	Scopes:       []string{"email", "profile"},
 	Endpoint:     google.Endpoint,
@@ -37,7 +36,7 @@ func generateJWT(email string) (string, error) {
 		"exp":   time.Now().Add(time.Hour * 24).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	return token.SignedString([]byte("maheshkarri2109"))
 }
 
 func GoogleLogin(c *gin.Context) {

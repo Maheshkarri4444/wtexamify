@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/Maheshkarri4444/wtexamify/config.go"
@@ -19,7 +18,7 @@ var userCollection *mongo.Collection = config.GetCollection(config.Client, "user
 
 func VerifyJWT(tokenString string) (jwt.MapClaims, error) {
 	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
-		return []byte(os.Getenv("JWT_SECRET")), nil
+		return []byte("maheshkarri2109"), nil
 	})
 
 	if err != nil || !token.Valid {
