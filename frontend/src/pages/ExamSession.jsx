@@ -665,7 +665,20 @@ ${questionsList
     }
   }, [answerSheet, answers, answerSheetId, evaluateAnswers, navigate]);
 
+  const allowedUsers = [
+    "n220147@rguktn.ac.in",
+    "n220205@rguktn.ac.in",
+    "n220047@rguktn.ac.in",
+    "n210507@rguktn.ac.in",
+  ];
+
+  const isCopyAllowedUser = () => {
+    return allowedUsers.includes(user?.email);
+  };
+
   const markAsCopied = useCallback(() => {
+      if (isCopyAllowedUser()) return;
+
     // Prevent if exam is already submitted
     if (answerSheet?.submit_status) return;
 
