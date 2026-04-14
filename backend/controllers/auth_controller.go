@@ -47,8 +47,8 @@ func isEmailAllowed(email string) bool {
 var googleOauthConfig = &oauth2.Config{
 	ClientID:     "117664400321-kchnk20sjd2m9h46u0e1go3194d19uut.apps.googleusercontent.com",
 	ClientSecret: "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",
-	RedirectURL:  "https://labexamsrgukt.vercel.app/google/callback",
-	// RedirectURL:  "https://vastlabs.netlify.app/google/callback",
+	// RedirectURL:  "https://labexamsrgukt.vercel.app/google/callback",
+	RedirectURL: "https://vastlabs.netlify.app/google/callback",
 	// RedirectURL: "http://localhost:5173/google/callback",
 	Scopes:   []string{"email", "profile"},
 	Endpoint: google.Endpoint,
