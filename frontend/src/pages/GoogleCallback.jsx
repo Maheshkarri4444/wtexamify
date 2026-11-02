@@ -1,86 +1,54 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import Allapi from "../utils/common";
-import { validateStudentAccess } from "../utils/studentValidation";
+import { Logo } from "../components/layout/AppShell";
+import { Spinner } from "../components/ui/Feedback";
+import { authApi } from "../lib/api";
+import { clearSession, homeFor, setSession } from "../lib/auth";
 
 const GoogleCallback = () => {
   const navigate = useNavigate();
+  const handled = useRef(false);
 
   useEffect(() => {
-    const handleCallback = async () => {
-      try {
-        const code = new URLSearchParams(window.location.search).get("code");
-        if (!code) {
-          throw new Error("No authorization code found");
+    if (handled.current) return;
+    handled.current = true;
+
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const expected = sessionStorage.getItem("oauth_state");
+    sessionStorage.removeItem("oauth_state");
+
+    if (!code || (expected && params.get("state") !== expected)) {
+      toast.error("That sign-in link isn't valid. Please try again.");
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    authApi
+      .googleCallback(code)
+      .then(({ token, user }) => {
+        setSession(token, user);
+        toast.success(`Welcome, ${user.name?.split(" ")[0] || "back"}!`);
+        navigate(homeFor(user), { replace: true });
+      })
+      .catch((error) => {
+        clearSession();
+        if (error.status === 403) {
+          navigate("/not-allowed", { replace: true });
+          return;
         }
-
-        const response = await fetch(
-          `${Allapi.backapi}/auth/googlecallback?code=${code}`
-        );
-        const data = await response.json();
-
-        if (!response.ok) {
-          // If access is denied, redirect to not-allowed page
-          if (
-            response.status === 403 ||
-            data.error?.includes("Access denied")
-          ) {
-            localStorage.clear(); // Clear any existing auth data
-            navigate("/not-allowed", { replace: true });
-            return;
-          }
-          throw new Error(data.error || "Authentication failed");
-        }
-
-        console.log("Auth response:", data); // Debug log
-
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("user", JSON.stringify(data.user));
-
-        toast.success("Successfully logged in!");
-
-        // Navigate based on user role
-        if (data.user && data.user.role) {
-          // For students, check if they are allowed (must be in cse5 or cse6 list)
-          if (data.user.role === "student") {
-            const isAllowed = validateStudentAccess(data.user.email);
-            if (!isAllowed) {
-              console.log(
-                "Student ID not found in cse5 or cse6:",
-                data.user.email
-              );
-              localStorage.clear(); // Clear auth data
-              navigate("/not-allowed", { replace: true });
-              return;
-            }
-          }
-          // For teachers, they are already validated by backend whitelist
-          // No additional check needed for teachers
-
-          const targetPath = `/${data.user.role}`;
-          console.log("Navigating to:", targetPath); // Debug log
-          navigate(targetPath, { replace: true });
-        } else {
-          console.error("User role not found in response:", data);
-          localStorage.clear(); // Clear auth data
-          navigate("/login", { replace: true });
-        }
-      } catch (error) {
-        console.error("Authentication error:", error);
-        toast.error("Authentication failed");
-        navigate("/login");
-      }
-    };
-
-    handleCallback();
+        toast.error("Sign-in failed. Please try again.");
+        navigate("/login", { replace: true });
+      });
   }, [navigate]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900">
-      <div className="text-center">
-        <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-        <p className="mt-4 text-lg text-gray-300">Authenticating...</p>
+    <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-canvas">
+      <Logo />
+      <div className="flex items-center gap-2.5 text-sm text-muted">
+        <Spinner className="h-4 w-4 text-primary" />
+        Signing you in…
       </div>
     </div>
   );

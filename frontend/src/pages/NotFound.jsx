@@ -1,33 +1,20 @@
-import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { FileQuestion } from 'lucide-react';
+import { Link } from "react-router-dom";
+import { Compass } from "lucide-react";
+import { Logo } from "../components/layout/AppShell";
+import { getUser, homeFor } from "../lib/auth";
 
-const NotFound = () => {
-  const navigate = useNavigate();
-
-  return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center p-8">
-      <div className="max-w-md w-full text-center space-y-8">
-        <div className="relative">
-          <div className="absolute -inset-1 bg-blue-500/20 rounded-lg blur"></div>
-          <div className="relative bg-gray-800 rounded-xl border-2 border-blue-500/20 p-8">
-            <FileQuestion className="w-20 h-20 mx-auto text-blue-400 mb-6" />
-            <h1 className="text-6xl font-bold text-white mb-4">404</h1>
-            <h2 className="text-xl font-semibold text-white mb-4">Page Not Found</h2>
-            <p className="text-gray-400 mb-8">
-              The page you're looking for doesn't exist or has been moved.
-            </p>
-            <button
-              onClick={() => navigate('/login')}
-              className="px-6 py-3 text-blue-400 bg-blue-500/20 rounded-lg hover:bg-blue-500/30 transition-all duration-300 font-medium"
-            >
-              Return to Login
-            </button>
-          </div>
-        </div>
-      </div>
+const NotFound = () => (
+  <div className="flex min-h-screen flex-col items-center justify-center bg-canvas px-6 text-center">
+    <Logo />
+    <div className="mt-10 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-primary-text">
+      <Compass className="h-7 w-7" />
     </div>
-  );
-};
+    <h1 className="mt-5 text-2xl font-semibold tracking-tight text-ink">This page doesn't exist</h1>
+    <p className="mt-2 max-w-md text-[15px] text-muted">The link may be old, or the exam may have been deleted.</p>
+    <Link to={homeFor(getUser())} className="mt-8 inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-ink shadow-sm hover:bg-primary/90">
+      Go home
+    </Link>
+  </div>
+);
 
 export default NotFound;

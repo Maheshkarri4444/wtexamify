@@ -5,4 +5,6 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   base: "/",
   plugins: [react()],
+  // Google sign-in redirects back to exactly this port, so never drift to another one.
+  server: { port: 5173, strictPort: true },
 });

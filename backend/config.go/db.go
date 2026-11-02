@@ -4,23 +4,29 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var Client *mongo.Client = createMongoClient()
+var (
+	clientOnce sync.Once
+	client     *mongo.Client
+)
+
+// DB returns the shared MongoDB client, connecting the first time it's needed,
+// so packages (and their tests) can be imported without a database.
+func DB() *mongo.Client {
+	clientOnce.Do(func() { client = createMongoClient() })
+	return client
+}
 
 func createMongoClient() *mongo.Client {
-	// err := godotenv.Load(".env")
-	// if err != nil {
-	// 	log.Fatalf("Error loading the file: %v", err)
-	// }
-
-	MongodbUri := "mongodb+srv://maheshkarri2109:IZRsBqCrulk68Lct@examify.vvyjv.mongodb.net/?retryWrites=true&w=majority&appName=examify"
+	MongodbUri := Get("MONGODB_URI", "")
 	if MongodbUri == "" {
-		log.Fatal("Mongodburi is not found in the env variables")
+		log.Fatal("MONGODB_URI is not set (add it to backend/.env)")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -31,11 +37,11 @@ func createMongoClient() *mongo.Client {
 		log.Fatal("mongo db connection error: ", err)
 	}
 
-	fmt.Println("connected to mongodb")
+	fmt.Println("connected to mongodb, database:", DBName())
 	return client
 }
 
-func GetCollection(client *mongo.Client, collectionName string) *mongo.Collection {
-	return client.Database("wtlabexam").Collection(collectionName)
-
+// Collection returns a collection in the configured database (DB_NAME).
+func Collection(collectionName string) *mongo.Collection {
+	return DB().Database(DBName()).Collection(collectionName)
 }

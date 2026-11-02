@@ -1,43 +1,21 @@
-import { useNavigate } from "react-router-dom";
-import { AlertCircle, LogOut } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ShieldX } from "lucide-react";
+import { Logo } from "../components/layout/AppShell";
 
-const NotAllowed = () => {
-  const navigate = useNavigate();
-
-  const handleLogout = () => {
-    localStorage.clear();
-    navigate("/login");
-  };
-
-  return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center p-8">
-      <div className="max-w-md w-full bg-gray-800 rounded-xl p-8 text-center">
-        <div className="flex justify-center mb-6">
-          <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center">
-            <AlertCircle className="w-10 h-10 text-red-400" />
-          </div>
-        </div>
-
-        <h1 className="text-3xl font-bold text-white mb-4">Access Denied</h1>
-
-        <p className="text-gray-400 mb-2">
-          Your student ID is not registered in the system.
-        </p>
-
-        <p className="text-gray-500 text-sm mb-8">
-          Please contact your administrator if you believe this is an error.
-        </p>
-
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all duration-300"
-        >
-          <LogOut className="w-5 h-5" />
-          Return to Login
-        </button>
-      </div>
+const NotAllowed = () => (
+  <div className="flex min-h-screen flex-col items-center justify-center bg-canvas px-6 text-center">
+    <Logo />
+    <div className="mt-10 flex h-14 w-14 items-center justify-center rounded-2xl bg-danger-soft text-danger-text">
+      <ShieldX className="h-7 w-7" />
     </div>
-  );
-};
+    <h1 className="mt-5 text-2xl font-semibold tracking-tight text-ink">This account can't use Examify</h1>
+    <p className="mt-2 max-w-md text-[15px] leading-relaxed text-muted">
+      Students need to sign in with their <span className="font-medium text-ink-2">@rguktn.ac.in</span> Google account. Teachers need their email approved first.
+    </p>
+    <Link to="/login" className="mt-8 inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-ink shadow-sm hover:bg-primary/90">
+      Try another account
+    </Link>
+  </div>
+);
 
 export default NotAllowed;

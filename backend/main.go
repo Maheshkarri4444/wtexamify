@@ -2,28 +2,26 @@ package main
 
 import (
 	"fmt"
-	// "log"
 	"net/http"
 	"time"
 
+	"github.com/Maheshkarri4444/wtexamify/config.go"
+	"github.com/Maheshkarri4444/wtexamify/exams"
 	"github.com/Maheshkarri4444/wtexamify/routes"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	// "github.com/joho/godotenv"
 )
 
 func main() {
 	fmt.Println("Welcome to Examify backend")
 
-	// err := godotenv.Load()
-	// if err != nil {
-	// 	log.Fatal("Error loading .env file")
-	// }
-
 	r := gin.Default()
+	if err := r.SetTrustedProxies([]string{"127.0.0.1", "::1"}); err != nil {
+		fmt.Println("❌ Invalid trusted proxies:", err)
+	}
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"https://labexamsrgukt.vercel.app", "http://localhost:5173","https://vastlabs.netlify.app", "*"}, // Change to your frontend URL
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowOrigins:     allowedOrigins(),
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
@@ -34,23 +32,25 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"message": "Server is running!"})
 	})
 
-	r.GET("/hi", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "hi"})
-	})
-
 	routes.AuthRoutes(r)
-	routes.AnswerSheetRoutes(r)
-	routes.ExamRoutes(r)
-	routes.AiRoutes(r)
+	exams.RegisterRoutes(r)
+	exams.Start()
 
-	// port := os.Getenv("PORT")
-	// if port == "" {
-	port := "8080"
-	//}
-	fmt.Println("🚀 Detected PORT:", port)
+	port := config.Get("PORT", "8080")
+	if config.IsDevelopment() {
+		fmt.Println("🧪 Development mode: /auth/dev-login is enabled for localhost")
+	}
 	fmt.Println("🌍 Binding server to 0.0.0.0:" + port)
 
 	if err := r.Run("0.0.0.0:" + port); err != nil {
 		fmt.Println("❌ Server failed to start:", err)
 	}
+}
+
+// allowedOrigins comes from CORS_ORIGINS (comma-separated) or falls back to the deployed frontends.
+func allowedOrigins() []string {
+	if origins := config.List("CORS_ORIGINS"); len(origins) > 0 {
+		return origins
+	}
+	return []string{"https://labexamsrgukt.vercel.app", "https://vastlabs.netlify.app", "http://localhost:5173"}
 }

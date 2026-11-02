@@ -2,47 +2,108 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  /* Color tokens as "R G B" so Tailwind can add opacity (bg-primary/10). */
+  :root {
+    --canvas: 246 246 249;
+    --surface: 255 255 255;
+    --subtle: 241 241 246;
+    --line: 228 228 235;
+    --line-strong: 206 207 218;
+    --ink: 15 16 28;
+    --ink-2: 52 54 72;
+    --muted: 102 105 124;
+    --ring: 99 91 255;
+    --shadow: 15 16 28;
 
+    --primary: 79 70 229;
+    --primary-ink: 255 255 255;
+    --primary-text: 67 56 202;
+    --primary-soft: 238 237 254;
 
+    --success: 22 163 74;
+    --success-text: 21 128 61;
+    --success-soft: 233 248 239;
+    --warning: 217 119 6;
+    --warning-text: 180 83 9;
+    --warning-soft: 254 244 226;
+    --danger: 220 38 38;
+    --danger-text: 185 28 28;
+    --danger-soft: 254 236 236;
+    --info: 2 132 199;
+    --info-text: 3 105 161;
+    --info-soft: 230 244 253;
 
-* {
-  user-select: none;
-}
-
-
-@keyframes loading-bar {
-  0% { width: 0; }
-  50% { width: 70%; }
-  100% { width: 100%; }
-}
-
-@keyframes score-reveal {
-  0% { 
-    transform: scale(0.5);
-    opacity: 0;
+    color-scheme: light;
   }
-  50% { 
-    transform: scale(1.2);
+
+  .dark {
+    --canvas: 10 10 15;
+    --surface: 19 19 27;
+    --subtle: 27 27 38;
+    --line: 39 40 54;
+    --line-strong: 60 62 82;
+    --ink: 238 238 245;
+    --ink-2: 201 202 216;
+    --muted: 146 148 170;
+    --ring: 129 120 255;
+    --shadow: 0 0 0;
+
+    --primary: 99 88 240;
+    --primary-ink: 255 255 255;
+    --primary-text: 170 163 255;
+    --primary-soft: 36 33 74;
+
+    --success: 22 163 74;
+    --success-text: 74 222 128;
+    --success-soft: 18 46 31;
+    --warning: 217 119 6;
+    --warning-text: 251 191 36;
+    --warning-soft: 52 37 10;
+    --danger: 220 38 38;
+    --danger-text: 248 113 113;
+    --danger-soft: 58 21 24;
+    --info: 2 132 199;
+    --info-text: 56 189 248;
+    --info-soft: 12 39 56;
+
+    color-scheme: dark;
   }
-  100% { 
-    transform: scale(1);
-    opacity: 1;
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+    font-feature-settings: "cv11", "ss01", "ss03";
+  }
+
+  ::selection {
+    background: rgb(var(--primary) / 0.2);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line-strong)) transparent;
   }
 }
 
-.animate-loading-bar {
-  animation: loading-bar 2s ease-in-out infinite;
-}
+@layer utilities {
+  .no-select {
+    -webkit-user-select: none;
+    user-select: none;
+  }
 
-.animate-score-reveal {
-  animation: score-reveal 1s ease-out forwards;
-}
+  /* Inputs stay selectable even inside a no-select area. */
+  .no-select input,
+  .no-select textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
 
-.hide-scrollbar {
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none;  /* IE and Edge */
-}
-
-.hide-scrollbar::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
+  .bg-dots {
+    background-image: radial-gradient(rgb(var(--line-strong) / 0.6) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
 }

@@ -1,24 +1,15 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate } from "react-router-dom";
+import { getToken, getUser, homeFor } from "../lib/auth";
 
 const ProtectedRoute = ({ children, role }) => {
-  const user = JSON.parse(localStorage.getItem('user'));
-  
-  if (!user) {
+  const user = getUser();
+  if (!user || !getToken()) {
     return <Navigate to="/login" replace />;
   }
 
   // If user has a different role, redirect to their appropriate dashboard
   if (user.role !== role) {
-    switch (user.role) {
-      case 'teacher':
-        return <Navigate to="/teacher" replace />;
-      case 'student':
-        return <Navigate to="/student" replace />;
-      case 'admin':
-        return <Navigate to="/admin" replace />;
-      default:
-        return <Navigate to="/login" replace />;
-    }
+    return <Navigate to={homeFor(user)} replace />;
   }
 
   return children;

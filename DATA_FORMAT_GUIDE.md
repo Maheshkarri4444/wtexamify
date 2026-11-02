@@ -1,191 +1,48 @@
-# 📋 Data Format Guide for Examify
+# Data format guide (Examify 2.0 · viva)
 
-## 📝 Questions Format
+Templates with example rows can be downloaded from **Exam → Questions → Template**. Every import shows a row-by-row report (what's ready, what's skipped and why) before anything is added.
 
-### Excel File Format for Questions
+## Questions spreadsheet
 
-When creating an exam, you need to upload an Excel file (`.xlsx` or `.xls`) with the following format:
+First sheet, one question per row. Header names are matched loosely (`Option A`, `option_a`, `a` and `option 1` all work).
 
-**Format:**
+| Column | Required | What to put in it |
+| --- | --- | --- |
+| `type` | no | `mcq_single`, `mcq_multi` or `fill`. Left empty, it's worked out: options with one answer letter → single, several letters → multiple, no options → fill in the blank. |
+| `question` | yes | The question. For fill in the blank, mark the blank with `____`. |
+| `option_a` … `option_f` | MCQs | Up to six options (eight in the editor). Empty cells are skipped. |
+| `answer` | yes | MCQ: the correct letter (`B`) or letters (`A,C`, `A C`, `AC`). The option's text also works. Fill in the blank: the accepted answer; separate alternatives with `\|` (`program counter \| PC`). |
+| `difficulty` | no | `easy`, `medium` or `hard` (or `e`/`m`/`h`). Needed only when sets are balanced by difficulty; untagged questions count as medium. |
+| `marks` | no | Defaults to 1. |
 
-- **File Type**: Excel (.xlsx or .xls)
-- **Structure**: Single column with questions
-- **Column**: First column (Column A) contains the questions
-- **Rows**: One question per row
+Example:
 
-**Example Excel Structure:**
+| type | question | option_a | option_b | option_c | option_d | answer | difficulty | marks |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| mcq_single | Which register holds the address of the next instruction? | Accumulator | Program Counter | Instruction Register | MAR | B | easy | 1 |
+| mcq_multi | Which of these memories are volatile? | RAM | ROM | Cache | Flash | A,C | medium | 2 |
+| fill | The ____ holds the address of the next instruction. | | | | | program counter \| PC | easy | 1 |
 
-| Column A (Questions)                            |
-| ----------------------------------------------- |
-| What is React?                                  |
-| Explain useState hook                           |
-| What is the difference between props and state? |
-| How do you handle events in React?              |
-| What is JSX?                                    |
+Rows are skipped (with the reason shown) when the question is empty, an MCQ has fewer than two options, the answer can't be read or points at an empty option, a single-correct question lists several answers, or the question is already in the exam.
 
-**Important Notes:**
+## How answers are marked
 
-- Questions are read from the **first column only** (Column A)
-- Each row represents one question
-- Empty rows are automatically filtered out
-- Questions can be edited after upload in the Create Exam form
-- Questions can be deleted individually before creating the exam
+- **Single correct:** full marks for the right option, otherwise 0.
+- **Multiple correct:** partial marks, never negative. The exam setting picks the rule:
+  - *Partial, wrong tick = 0* (default): any wrong tick scores 0 for that question; otherwise marks × correct ticks ÷ correct options.
+  - *Partial, wrong ticks subtract:* marks × (correct ticks − wrong ticks) ÷ correct options, at least 0.
+- **Fill in the blank:** capital letters, all spaces and a trailing full stop are ignored, so `Program Counter.` matches `programcounter`. Other punctuation counts (`C++` ≠ `C`).
 
-**Where to Upload:**
+## Students spreadsheet (or paste)
 
-- Navigate to **Teacher Panel** → Click **"Create Exam"** → Upload Excel file in the "Upload Questions" section
+Any layout, any sheet: every email and RGUKT roll number found is picked up, and names, headers and other text are ignored. `N210368` becomes `n210368@rguktn.ac.in`. Only students on an exam's list can see or write it.
 
-**Question Set Generation:**
+## How sets are made
 
-- **Internal/External Exams**: Questions are grouped into sets of 3 (every 3 questions = 1 set)
-- **10-Viva**: Questions are shuffled and grouped into sets of 10
-- **15-Viva**: Questions are shuffled and grouped into sets of 15
+The teacher sets the questions per set (and optionally how many easy/medium/hard). The number of sets is the smallest number that uses every question at least once. Questions are used up before any is repeated; when a difficulty runs short (or the last set is short), it's topped up with the least-used questions **of the same difficulty**, never twice in one set. Sets are dealt to students in roll-number order, so neighbours get different sets, and question and option order is shuffled per student.
 
----
+Sets are rebuilt and re-dealt whenever questions or the blueprint change, until the first student starts. From then on questions, blueprint and sets are locked; students can still be added (they join the emptiest set).
 
-## 👥 Student Details Format
+## Where the data lives
 
-### Current System: Automatic Registration
-
-**⚠️ IMPORTANT: There is NO bulk upload functionality for students currently.**
-
-Students are **automatically registered** when they:
-
-1. Log in using Google OAuth
-2. Have an email ending with `@rguktn.ac.in`
-
-**Student Data Structure:**
-When a student logs in for the first time, the system automatically creates a user record with:
-
-```json
-{
-  "id": "ObjectID",
-  "name": "Student Name (from Google)",
-  "email": "student@rguktn.ac.in",
-  "role": "student",
-  "google_id": "Google ID",
-  "image": "Google Profile Picture URL",
-  "container_id": "ObjectID",
-  "created_at": "DateTime",
-  "updated_at": "DateTime"
-}
-```
-
-**Student Registration Process:**
-
-1. Student clicks "Login with Google"
-2. System checks if email ends with `@rguktn.ac.in`
-3. If yes → Creates student account automatically
-4. If no → Access denied (unless in teacher whitelist)
-
-**Student Container:**
-Each student gets a container that stores:
-
-- Exam IDs they've taken
-- Answer Sheet IDs
-- Copy violation status
-
----
-
-## 📧 Email Invitation System
-
-There is a **Send Emails** feature in the Teacher Panel that sends invitation emails to students, but this:
-
-- **Does NOT bulk upload students**
-- Only sends invitation emails to a hardcoded list of email addresses
-- Students still need to log in via Google OAuth to register
-
-**Location:** `backend/controllers/exam_controller.go` - `SendEmails()` function
-
-**Current Implementation:**
-
-- Email list is hardcoded in the backend
-- Teachers can click "Send Emails" button in Teacher Panel
-- Emails are sent to invite students to take the exam
-
----
-
-## 🔧 Exam Data Format
-
-When creating an exam via API or form, the data structure is:
-
-```json
-{
-  "name": "Exam Name",
-  "duration": 60,  // Duration in minutes
-  "exam_type": "internal" | "external" | "viva" | "coaviva",
-  "questions": [
-    "Question 1 text",
-    "Question 2 text",
-    "Question 3 text"
-  ]
-}
-```
-
-**Exam Types:**
-
-- `internal`: Internal exam (3 questions per set)
-- `external`: External exam (3 questions per set)
-- `viva`: 10-bit Viva (10 questions per set, shuffled)
-- `coaviva`: 15-bit Viva (15 questions per set, shuffled)
-
----
-
-## 📊 Answer Sheet Format
-
-Answer sheets are automatically created when a student starts an exam:
-
-```json
-{
-  "exam_id": "ObjectID",
-  "exam_type": "internal" | "external" | "viva" | "coaviva",
-  "duration": 60,
-  "set_number": 1,
-  "student_name": "Student Name",
-  "student_email": "student@rguktn.ac.in",
-  "data": [
-    {"Question 1": "Answer 1"},
-    {"Question 2": "Answer 2"}
-  ],
-  "ai_score": 85.5,
-  "copied": false,
-  "copy_count": 0,
-  "submit_status": false
-}
-```
-
----
-
-## 🚫 Missing Feature: Student Bulk Upload
-
-**Currently, there is NO functionality to:**
-
-- Bulk upload student data from Excel/CSV
-- Import student lists
-- Pre-register students before they log in
-
-**Workaround:**
-
-- Students must log in individually via Google OAuth
-- The system automatically creates their account on first login
-- You can send invitation emails (but students still need to log in)
-
-**If you need bulk upload functionality**, it would need to be implemented as a new feature.
-
----
-
-## 📍 File Locations
-
-- **Question Upload**: `frontend/src/pages/CreateExam.jsx` (lines 28-65)
-- **Student Registration**: `backend/controllers/auth_controller.go` (lines 75-175)
-- **Email Sending**: `backend/controllers/exam_controller.go` (lines 311-363)
-- **Data Models**: `backend/models/models.go`
-
----
-
-## 💡 Tips
-
-1. **For Questions**: Prepare your Excel file with one question per row in Column A
-2. **For Students**: Ensure they have RGUKT email addresses (`@rguktn.ac.in`)
-3. **For Teachers**: Add teacher emails to the whitelist in `backend/controllers/auth_controller.go`
-4. **Example Excel**: Check `frontend/src/web_technologies_questions.xlsx` for reference
+MongoDB collections `v2_exams` (questions, blueprint, sets, students, settings) and `v2_attempts` (one per student per exam: their paper, answers, events and score), in the database named by `DB_NAME`. The v1 collections are untouched.
