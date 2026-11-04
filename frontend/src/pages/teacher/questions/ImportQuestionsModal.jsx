@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, UploadCloud, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Layers3, UploadCloud, XCircle } from "lucide-react";
 import { Badge } from "../../../components/ui/Badge";
 import { Button } from "../../../components/ui/Button";
-import { Spinner } from "../../../components/ui/Feedback";
+import { Callout, Spinner } from "../../../components/ui/Feedback";
 import { Modal } from "../../../components/ui/Overlay";
 import { cn } from "../../../lib/cn";
 import { downloadQuestionTemplate, parseQuestionFile } from "../../../lib/excel";
@@ -27,10 +27,14 @@ const TEMPLATES = {
     ["fill", QUESTION_TYPES.fill.label],
   ],
   internal: [["internal", "Internal template"]],
-  external: [["external", "External template"]],
+  external: [
+    ["external", "External template"],
+    ["external_sets", "Own sets template"],
+  ],
 };
 
-export default function ImportQuestionsModal({ open, onClose, existingTexts, onImport, examType = "viva" }) {
+/** existing: the exam's questions (or their texts), so a re-import doesn't add them twice. */
+export default function ImportQuestionsModal({ open, onClose, existingTexts, onImport, examType = "viva", customSets = false }) {
   const [result, setResult] = useState(null);
   const [fileName, setFileName] = useState("");
   const [parsing, setParsing] = useState(false);
@@ -66,12 +70,14 @@ export default function ImportQuestionsModal({ open, onClose, existingTexts, onI
       delete copy.row;
       return copy;
     });
-    const ok = await onImport(questions);
+    const ok = await onImport(questions, result.custom ? { custom_sets: true, set_contexts: result.setContexts } : {});
     setImporting(false);
     if (ok) onClose();
   };
 
   const errors = result?.issues.filter((i) => i.level === "error") ?? [];
+  const sets = result?.custom ? new Set(result.questions.map((q) => q.set)) : null;
+  const withSchema = result?.questions.filter((q) => q.context).length ?? 0;
   const warnings = result?.issues.filter((i) => i.level === "warning") ?? [];
 
   return (
@@ -137,7 +143,7 @@ export default function ImportQuestionsModal({ open, onClose, existingTexts, onI
             <div className="text-sm font-medium text-ink">Start from a template</div>
             <p className="mt-0.5 text-[13px] text-muted">
               {examType === "external"
-                ? "One row per question: language, your answer, optional starter code and up to 10 test cases. A “How to fill it” sheet explains each column."
+                ? "One row per question: language, your answer, optional starter code and test cases. For your own sets, add a set column (and a schema column for each question's tables). A “How to fill it” sheet explains each column."
                 : examType === "internal"
                   ? "One row per question, with optional difficulty and marks."
                   : "Each template has example rows and a “How to fill it” sheet. Mix types freely in one file."}
@@ -174,6 +180,16 @@ export default function ImportQuestionsModal({ open, onClose, existingTexts, onI
             ))}
           </div>
 
+          {sets && result.questions.length > 0 && (
+            <Callout tone="info" icon={Layers3}>
+              Your own sets: {pluralize(sets.size, "set")}, as numbered in the sheet{withSchema ? `, with tables and data for ${pluralize(withSchema, "question")}` : ""}
+              {result.setContexts.length ? ` and ${pluralize(result.setContexts.length, "set")}` : ""}. Each student gets one whole set, dealt in turn by email order.
+            </Callout>
+          )}
+          {!sets && customSets && result.questions.length > 0 && (
+            <Callout tone="warning">This exam uses your own sets, but this sheet has no set column. Add one, so each question goes to its set.</Callout>
+          )}
+
           {result.issues.length > 0 && (
             <div className="max-h-48 overflow-y-auto rounded-xl border border-line">
               {result.issues.map((issue, i) => (
@@ -193,6 +209,7 @@ export default function ImportQuestionsModal({ open, onClose, existingTexts, onI
                   <thead className="sticky top-0 bg-subtle text-xs text-muted">
                     <tr>
                       <th className="px-3.5 py-2 font-medium">Row</th>
+                      {sets && <th className="px-3.5 py-2 font-medium">Set</th>}
                       <th className="px-3.5 py-2 font-medium">Type</th>
                       <th className="px-3.5 py-2 font-medium">Question</th>
                       <th className="px-3.5 py-2 font-medium">{examType === "viva" ? "Answer" : "Details"}</th>
@@ -202,8 +219,9 @@ export default function ImportQuestionsModal({ open, onClose, existingTexts, onI
                     {result.questions.slice(0, 100).map((q) => (
                       <tr key={q.row} className="align-top">
                         <td className="px-3.5 py-2 tabular-nums text-muted">{q.row}</td>
+                        {sets && <td className="px-3.5 py-2 font-medium tabular-nums text-ink">{q.set}</td>}
                         <td className="px-3.5 py-2">
-                          <Badge tone="primary">{QUESTION_TYPES[q.type].short}</Badge>
+                          <Badge tone="primary">{q.type === "code" ? languageLabel(q.language) : QUESTION_TYPES[q.type].short}</Badge>
                         </td>
                         <td className="max-w-[22rem] px-3.5 py-2 text-ink">
                           <span className="line-clamp-2">{q.text}</span>

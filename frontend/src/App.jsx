@@ -23,6 +23,7 @@ const LiveTab = lazy(() => import('./pages/teacher/LiveTab'));
 const ResultsTab = lazy(() => import('./pages/teacher/ResultsTab'));
 const StudentDashboard = lazy(() => import('./pages/student/StudentDashboard'));
 const ExamRoom = lazy(() => import('./pages/student/ExamRoom'));
+const DemoExam = lazy(() => import('./pages/student/DemoExam'));
 
 function App() {
   return (
@@ -57,6 +58,8 @@ function App() {
           {/* Student */}
           <Route path="/student" element={<ProtectedRoute role="student"><StudentDashboard /></ProtectedRoute>} />
           <Route path="/student/exams/:id" element={<ProtectedRoute role="student"><ExamRoom /></ProtectedRoute>} />
+          {/* Practice exams that never reach the server, open to anyone */}
+          <Route path="/demo/:kind" element={<DemoExam />} />
 
           {/* Redirect root */}
           <Route path="/" element={<Navigate to={homeFor(getUser())} replace />} />

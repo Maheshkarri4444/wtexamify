@@ -100,6 +100,15 @@ function QuestionCard({ question, number, selected, onSelect, onEdit, onDelete, 
   );
 }
 
+// The importer and the editor only send languages this page knows, so a server
+// that refuses one is running older code than the page (it hasn't been
+// restarted or deployed since the language was added).
+const UNKNOWN_LANGUAGE = /pick the language this question is answered in|doesn't know the language/i;
+function saveError(error) {
+  if (error.status !== 400 || !UNKNOWN_LANGUAGE.test(error.message)) return error.message;
+  return `${error.message.replace(/\.$/, "")}. The language is fine: the Examify server is running older code than this page. Restart the backend (or deploy the latest version), then try again.`;
+}
+
 const EMPTY_TEXT = {
   viva: "Add questions one by one, or import a whole spreadsheet. Mix single-correct, multiple-correct and fill-in-the-blank questions; Examify deals them into sets for you.",
   internal: "Add the questions for this internal, or import them from a spreadsheet. Examify deals them into unique sets, so neighbours get different papers.",
@@ -111,7 +120,9 @@ export default function QuestionsTab() {
   const { exam } = bundle;
   const examType = exam.type;
   const locked = exam.content_locked;
+  const custom = Boolean(exam.blueprint?.custom);
   const [query, setQuery] = useState("");
+  const [setFilter, setSetFilter] = useState("");
   const [type, setType] = useState("");
   const [language, setLanguage] = useState("");
   const [difficulty, setDifficulty] = useState("");
@@ -127,15 +138,18 @@ export default function QuestionsTab() {
     return numbered.filter(
       (item) =>
         (!type || item.type === type) &&
+        (!setFilter || item.set === Number(setFilter)) &&
         (!language || item.language === language) &&
         (!difficulty || (difficulty === "none" ? !item.difficulty : item.difficulty === difficulty)) &&
         (!q ||
           item.text.toLowerCase().includes(q) ||
           item.options.some((o) => o.toLowerCase().includes(q)) ||
           item.answers.some((a) => a.toLowerCase().includes(q)) ||
-          (item.solution || "").toLowerCase().includes(q))
+          (item.solution || "").toLowerCase().includes(q) ||
+          (item.context || "").toLowerCase().includes(q))
     );
-  }, [numbered, query, type, language, difficulty]);
+  }, [numbered, query, type, setFilter, language, difficulty]);
+  const setNumbers = useMemo(() => [...new Set(exam.questions.map((q) => q.set).filter(Boolean))].sort((a, b) => a - b), [exam.questions]);
 
   const counts = useMemo(() => {
     const by = (key, value) => exam.questions.filter((q) => q[key] === value).length;
@@ -184,7 +198,7 @@ export default function QuestionsTab() {
       if (!another) setEditor(null);
       return true;
     } catch (error) {
-      toast.error(error.message);
+      toast.error(saveError(error), { duration: 10000 });
       refused(error);
       return false;
     } finally {
@@ -192,14 +206,18 @@ export default function QuestionsTab() {
     }
   };
 
-  const importQuestions = async (questions) => {
+  const importQuestions = async (questions, extra) => {
     try {
-      const next = await teacherApi.addQuestions(exam.id, questions);
+      const next = await teacherApi.addQuestions(exam.id, questions, extra);
       setBundle(next);
-      toast.success(`Imported ${pluralize(next.added, "question")}. Sets were rebuilt.`);
+      toast.success(
+        next.exam.blueprint?.custom
+          ? `Imported ${pluralize(next.added, "question")} into ${pluralize(next.exam.sets.length, "set")} of your own.`
+          : `Imported ${pluralize(next.added, "question")}. Sets were rebuilt.`
+      );
       return true;
     } catch (error) {
-      toast.error(error.message, { duration: 6000 });
+      toast.error(saveError(error), { duration: 10000 });
       refused(error);
       return false;
     }
@@ -233,7 +251,7 @@ export default function QuestionsTab() {
 
   const editorModal = (
     <Suspense fallback={null}>
-      {editor && <Editor open question={editor.question} onClose={() => setEditor(null)} onSave={save} saving={busy} examId={exam.id} />}
+      {editor && <Editor open question={editor.question} onClose={() => setEditor(null)} onSave={save} saving={busy} examId={exam.id} customSets={custom} setNumbers={setNumbers} />}
     </Suspense>
   );
 
@@ -251,7 +269,7 @@ export default function QuestionsTab() {
           <TemplateMenu examType={examType} />
         </EmptyState>
         {editorModal}
-        <ImportQuestionsModal open={importing} onClose={() => setImporting(false)} existingTexts={[]} onImport={importQuestions} examType={examType} />
+        <ImportQuestionsModal open={importing} onClose={() => setImporting(false)} existingTexts={[]} onImport={importQuestions} examType={examType} customSets={custom} />
       </div>
     );
   }
@@ -277,6 +295,18 @@ export default function QuestionsTab() {
               {["mcq_single", "mcq_multi", "fill"].map((value) => (
                 <option key={value} value={value}>
                   {QUESTION_TYPES[value].label}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
+        {custom && (
+          <div className="w-32">
+            <Select value={setFilter} onChange={(e) => setSetFilter(e.target.value)} aria-label="Filter by set">
+              <option value="">All sets</option>
+              {setNumbers.map((n) => (
+                <option key={n} value={n}>
+                  Set {n}
                 </option>
               ))}
             </Select>
@@ -329,6 +359,7 @@ export default function QuestionsTab() {
             <span>{counts.fill} fill in the blank</span>
           </>
         )}
+        {custom && <span>{pluralize(setNumbers.length, "set")} of your own</span>}
         {examType === "external" && (
           <>
             {Object.entries(counts.languages).map(([lang, n]) => (
@@ -383,7 +414,7 @@ export default function QuestionsTab() {
       )}
 
       {editorModal}
-      <ImportQuestionsModal open={importing} onClose={() => setImporting(false)} existingTexts={exam.questions.map((q) => q.text)} onImport={importQuestions} examType={examType} />
+      <ImportQuestionsModal open={importing} onClose={() => setImporting(false)} existingTexts={exam.questions} onImport={importQuestions} examType={examType} customSets={custom} />
       <ConfirmModal
         open={Boolean(deleting)}
         onClose={() => setDeleting(null)}

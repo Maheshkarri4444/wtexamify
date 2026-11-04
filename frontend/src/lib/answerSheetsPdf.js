@@ -1,5 +1,5 @@
 import { jsPDF } from "jspdf";
-import { QUESTION_TYPES, SUBMIT_REASONS, formatDateTime, formatNumber, formatSpan, languageLabel, letter, testLabels } from "./format";
+import { QUESTION_TYPES, SUBMIT_REASONS, formatDateTime, formatNumber, formatSpan, languageLabel, letter, paperLabels, partGroups, splitShared, testLabels, testOutcome } from "./format";
 
 // A4 portrait, in points.
 const PAGE_W = 595.28;
@@ -16,6 +16,15 @@ const TINT = [245, 246, 249];
 const GOOD = [21, 128, 61];
 const BAD = [185, 28, 28];
 const WARN = [161, 98, 7];
+
+// Outcome boxes: text colour, fill and border.
+const BOX = {
+  good: [GOOD, [220, 252, 231], [134, 239, 172]],
+  bad: [BAD, [254, 226, 226], [252, 165, 165]],
+  warn: [WARN, [254, 243, 199], [252, 211, 77]],
+  muted: [MUTED, [241, 245, 249], [203, 213, 225]],
+};
+const TEST_BOX = { passed: ["Passed", "good"], failed: ["Not passed", "bad"], skipped: ["Not run", "muted"], none: ["Not checked", "muted"] };
 
 const RESULT = {
   correct: ["Correct", GOOD],
@@ -100,6 +109,35 @@ class Writer {
       this.y += box;
     });
     this.y += 5;
+  }
+
+  /** Coloured boxes in a row, wrapping onto more rows: [{ text, tone }]. */
+  boxes(items) {
+    const size = 8.2;
+    const height = 15;
+    const gap = 5;
+    let x = MARGIN;
+    this.room(height + gap);
+    for (const { text, tone } of items) {
+      const [color, fill, border] = BOX[tone];
+      this.font(size, "bold", color);
+      const label = safe(text);
+      const width = this.doc.getTextWidth(label) + 14;
+      if (x > MARGIN && x + width > MARGIN + WIDTH) {
+        x = MARGIN;
+        this.y += height + gap;
+        this.room(height + gap);
+        this.font(size, "bold", color);
+      }
+      this.doc.setFillColor(...fill);
+      this.doc.setDrawColor(...border);
+      this.doc.setLineWidth(0.6);
+      this.doc.roundedRect(x, this.y, width, height, 3, 3, "FD");
+      this.doc.setTextColor(...color);
+      this.doc.text(label, x + 7, this.y + 10.4);
+      x += width + gap;
+    }
+    this.y += height + gap + 2;
   }
 
   rule(gap = 10) {
@@ -205,29 +243,62 @@ function options(w, item) {
   if (!selected.length) w.text("No option picked.", { x: MARGIN + 10, size: 9, color: MUTED });
 }
 
-function code(w, item) {
+function code(w, item, aiFailed) {
   w.text(`Student's code · ${languageLabel(item.language)}`, { size: 8.6, style: "bold", color: MUTED });
   w.y += 2;
   w.code(item.code);
   const tests = item.test_cases || [];
   if (item.run) {
     w.text(`AI check: ${item.run.percent}% correct${item.run.current ? "" : " (this check was of an earlier version of the code)"}`, { size: 9.6, style: "bold", color: INK_2 });
+    w.y += 2;
     if (tests.length) {
       const labels = testLabels(tests);
-      const outcomes = tests.map((t, i) => `${labels[i]}: ${(item.run.tests || []).find((o) => o.id === t.id)?.executes ? "passed" : "failed"}`);
-      w.text(outcomes.join("     "), { size: 9, color: INK_2 });
+      w.boxes(
+        tests.map((t, i) => {
+          const [text, tone] = TEST_BOX[testOutcome(item.run, t)];
+          return { text: `${labels[i]}: ${text}`, tone };
+        })
+      );
+    } else {
+      // No test cases: the AI's correctness decides, with the same 80% bar students see.
+      w.boxes([item.run.percent >= 80 ? { text: "Passed", tone: "good" } : { text: "Not passed", tone: "bad" }]);
     }
   } else if (String(item.code || "").trim()) {
-    w.text("Not checked by the AI yet.", { size: 9, color: MUTED });
+    w.y += 2;
+    if (aiFailed) {
+      w.boxes([{ text: "AI error", tone: "warn" }]);
+      w.text("The AI evaluation pipeline couldn't check this answer, so the teacher marks it by hand.", { size: 9, color: WARN });
+    } else {
+      w.boxes([{ text: "Not checked by the AI yet", tone: "muted" }]);
+    }
   }
 }
 
-function question(w, item, internal) {
+/** A shaded bar over a part's questions (II (a) to II (e)), with the marks for all of it. */
+function partHeader(w, part, items, internal, shared) {
+  const awarded = items.reduce((sum, item) => sum + (item.awarded || 0), 0);
+  const max = items.reduce((sum, item) => sum + (item.max || 0), 0);
+  w.room(90); // keep the bar with its first question
+  w.doc.setFillColor(...TINT);
+  w.doc.rect(MARGIN, w.y, WIDTH, 20, "F");
+  w.font(10.5, "bold", INK);
+  w.doc.text(safe(`Part ${part}  ·  ${items.length} questions`), MARGIN + 7, w.y + 13.6);
+  w.font(9.6, "bold", INK_2);
+  w.doc.text(safe(internal ? `${formatNumber(max)} marks` : `${formatNumber(awarded)} / ${formatNumber(max)} marks`), MARGIN + WIDTH - 7, w.y + 13.6, { align: "right" });
+  w.y += 26;
+  if (shared) {
+    w.text(shared, { size: 9.4, color: INK_2 });
+    w.y += 8;
+  }
+}
+
+function question(w, item, internal, grading, label, text = item.text) {
   w.room(64); // keep a question's heading with its first lines
-  const heading = [`Q${item.number}`, item.type === "code" ? languageLabel(item.language) : internal ? "" : QUESTION_TYPES[item.type]?.label, capitalize(item.difficulty)]
+  const heading = [label || `Q${item.number}`, item.type === "code" ? languageLabel(item.language) : internal ? "" : QUESTION_TYPES[item.type]?.label, capitalize(item.difficulty)]
     .filter(Boolean)
     .join("  ·  ");
-  const [result, color] = RESULT[item.status] || RESULT.unanswered;
+  const aiFailed = grading === "failed" && item.status === "pending";
+  const [result, color] = aiFailed ? ["AI error", WARN] : RESULT[item.status] || RESULT.unanswered;
   const marks = internal
     ? `${formatNumber(item.max)} marks`
     : `${formatNumber(item.awarded)} / ${formatNumber(item.max)} marks${result ? `  ·  ${result}` : ""}${item.overridden ? "  ·  set by the teacher" : ""}`;
@@ -236,9 +307,9 @@ function question(w, item, internal) {
   w.font(9.4, "bold", internal ? MUTED : color);
   w.doc.text(safe(marks), MARGIN + WIDTH, w.y + 9, { align: "right" });
   w.y += 17;
-  w.text(item.text, { size: 10.4 });
+  w.text(text, { size: 10.4 });
   w.y += 4;
-  if (item.type === "code") code(w, item);
+  if (item.type === "code") code(w, item, aiFailed);
   else if (item.type === "fill") {
     w.text(`Student wrote: ${item.answer_text || "(nothing)"}`, { x: MARGIN + 10, width: WIDTH - 10, size: 9.6, style: "bold", color: item.status === "correct" ? GOOD : item.answer_text ? BAD : MUTED });
     w.text(`Accepted: ${(item.accepted || []).join("  |  ")}`, { x: MARGIN + 10, width: WIDTH - 10, size: 9.2, color: MUTED });
@@ -258,7 +329,13 @@ function sheet(w, exam, { student, items }) {
   details(w, exam, student);
   w.rule(10);
   if (!items.length) w.text("This student hasn't been dealt a paper yet.", { size: 10, color: MUTED });
-  for (const item of items) question(w, item, internal);
+  const labels = paperLabels(items.map((item) => item.text));
+  for (const group of partGroups(items)) {
+    const parts = group.part && group.items.length > 1;
+    const { shared, own } = parts ? splitShared(group.items.map((item) => item.text)) : { shared: "", own: [] };
+    if (parts) partHeader(w, group.part, group.items, internal, shared);
+    group.items.forEach((item, j) => question(w, item, internal, student.grading, labels?.[items.indexOf(item)], own[j]));
+  }
 }
 
 /**

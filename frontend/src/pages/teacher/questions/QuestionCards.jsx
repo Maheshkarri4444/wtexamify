@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { ChevronDown, Database, EyeOff, Lock, Pencil, Save, Trash2 } from "lucide-react";
+import { ContextSection } from "../../../components/exam/DataText";
 import { DifficultyBadge, QuestionText } from "../../../components/exam/ExamBits";
 import { Badge } from "../../../components/ui/Badge";
 import { Button, IconButton } from "../../../components/ui/Button";
@@ -31,18 +32,22 @@ function CardShell({ number, selected, onSelect, onEdit, onDelete, locked, badge
   );
 }
 
+const SetBadge = ({ set }) => (set > 0 ? <Badge tone="info">Set {set}</Badge> : null);
+
 export function DescriptiveCard({ question, ...props }) {
   return (
     <CardShell
       {...props}
       badges={
         <>
+          <SetBadge set={question.set} />
           <DifficultyBadge difficulty={question.difficulty} />
           <Badge>{pluralize(question.marks, "mark")}</Badge>
         </>
       }
     >
       <QuestionText text={question.text} className="text-[15px] leading-relaxed text-ink" />
+      {question.context && <ContextSection title="Tables and data" text={question.context} defaultOpen={false} className="mt-3" />}
     </CardShell>
   );
 }
@@ -57,6 +62,7 @@ export function CodeCard({ question, ...props }) {
       {...props}
       badges={
         <>
+          <SetBadge set={question.set} />
           <Badge tone="primary">{languageLabel(question.language)}</Badge>
           <DifficultyBadge difficulty={question.difficulty} />
           <Badge>{pluralize(question.marks, "mark")}</Badge>
@@ -67,6 +73,7 @@ export function CodeCard({ question, ...props }) {
       }
     >
       <QuestionText text={question.text} className="text-[15px] leading-relaxed text-ink" />
+      {question.context && <ContextSection title="Tables and data for this question" text={question.context} defaultOpen={false} className="mt-3" />}
       {tests.length > 0 && (
         <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
           {tests.map((test, i) => (

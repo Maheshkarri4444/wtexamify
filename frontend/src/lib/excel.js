@@ -64,13 +64,32 @@ const EXTERNAL_SAMPLES = [
 const EXTERNAL_HELP = [
   ["Column", "What to put in it"],
   ["question", "The question as students should read it. For SQL, refer to the tables in the exam's shared schema."],
-  ["language", "sql, python, c, cpp, java, javascript, php, other, or any (the student picks their language)."],
+  ["language", "sql, plsql (PL/SQL), python, c, cpp, java, javascript, php, other, or any (the student picks their language)."],
   ["answer", "Your answer: code or text. Students never see it; the AI compares their code with it."],
   ["starter_code", "Optional. Code the editor starts with, such as a function signature."],
-  ["marks", "Optional. Defaults to 1. A student who is 80% correct gets 80% of the marks."],
+  ["marks", "Optional. Defaults to 1. With test cases, marks follow the tests passed (4 of 5 = 80% of the marks); without them, the AI's correctness %."],
   ["difficulty", "Optional: easy, medium or hard. Needed only if you balance sets by difficulty."],
-  ["public_1_* / public_2_*", "Up to 2 public test cases (input and expected output). Students see them next to the question."],
-  ["private_N_input / private_N_output", "Up to 10 private test cases (add columns up to private_10_*). Students see only whether they pass; when their code fails one, they're shown that test, like LeetCode. Leave every test column empty to have the AI only compare the code with your answer."],
+  ["public_N_input / public_N_output", "Up to 10 public test cases (add columns up to public_10_*). Students see them next to the question, and they're checked first."],
+  ["private_N_input / private_N_output", "Up to 10 private test cases (add columns up to private_10_*). They're checked only once every public test passes. Students see only whether they pass; when their code fails one, they're shown that test, like LeetCode. Leave every test column empty to have the AI only compare the code with your answer."],
+  ["set (optional)", "Your own sets: the set number of each question. Every row then needs one, and each student gets one whole set. Download the own-sets template to see it."],
+  ["schema (optional)", "Tables and rows this question uses. Students see them above the question, and the AI checks against them."],
+];
+
+// Your own sets: a set column, and each question's tables and rows.
+const SETS_COLUMNS = ["set", "question", "language", "answer", "starter_code", "marks", "difficulty", "schema", "public_1_input", "public_1_output", "public_2_input", "public_2_output", "private_1_input", "private_1_output"];
+const SETS_SCHEMA = "CREATE TABLE Student (sid NUMBER PRIMARY KEY, sname VARCHAR(20), marks NUMBER);\n\nTable: Student\nSID | SNAME | MARKS\n1 | Ravi | 88\n2 | Sita | 95\n3 | Kiran | 67";
+const SETS_SAMPLES = [
+  [1, "I. Implement a PL/SQL program to find the factorial of a given number.", "plsql", "DECLARE\n  n NUMBER := &n;\n  f NUMBER := 1;\nBEGIN\n  FOR i IN 1 .. n LOOP\n    f := f * i;\n  END LOOP;\n  DBMS_OUTPUT.PUT_LINE('Factorial of ' || n || ' is ' || f);\nEND;\n/", "", 10, "easy", "", "n = 5", "Factorial of 5 is 120", "n = 0", "Factorial of 0 is 1", "n = 7", "Factorial of 7 is 5040"],
+  [1, "II. Student (sid, sname, marks)\nWrite the SQL for each query under its letter.\na. Find the student with the highest marks.\nb. List the students who scored more than 80, in order of marks.", "sql", "-- a\nSELECT sname FROM Student WHERE marks = (SELECT MAX(marks) FROM Student);\n-- b\nSELECT sname, marks FROM Student WHERE marks > 80 ORDER BY marks;", "-- a.\n\n-- b.\n", 20, "medium", SETS_SCHEMA, "a. Find the student with the highest marks.", "SNAME\nSita", "b. List the students who scored more than 80, in order of marks.", "SNAME | MARKS\nRavi | 88\nSita | 95", "", ""],
+  [2, "I. Implement a PL/SQL program to check whether a number is even or odd.", "plsql", "DECLARE\n  n NUMBER := &n;\nBEGIN\n  IF MOD(n, 2) = 0 THEN\n    DBMS_OUTPUT.PUT_LINE(n || ' is even');\n  ELSE\n    DBMS_OUTPUT.PUT_LINE(n || ' is odd');\n  END IF;\nEND;\n/", "", 10, "easy", "", "n = 4", "4 is even", "n = 7", "7 is odd", "n = 0", "0 is even"],
+  [2, "II. Student (sid, sname, marks)\nWrite the SQL for each query under its letter.\na. Count the students.\nb. Find the average marks.", "sql", "-- a\nSELECT COUNT(*) FROM Student;\n-- b\nSELECT AVG(marks) FROM Student;", "-- a.\n\n-- b.\n", 20, "medium", SETS_SCHEMA, "a. Count the students.", "COUNT\n3", "b. Find the average marks.", "AVG_MARKS\n83.33", "", ""],
+];
+const SETS_HELP = [
+  ...EXTERNAL_HELP,
+  ["", ""],
+  ["Your own sets", "Each set number is one paper, in the order of its rows. Students are dealt the sets in turn, by email order, so neighbours get different sets. Questions can repeat across sets."],
+  ["Tables in schema and outputs", "Separate blocks with a blank line. A block with a title line (Table: Student) and rows of values separated by | is shown to students as a table; anything else, like CREATE TABLE, is shown as code. Expected outputs work the same way: a heading row, then one row per line."],
+  ["Sets sheet (optional)", "A sheet named Sets with the columns set and schema gives a whole set its tables, for when every question in the set uses them."],
 ];
 
 function writeTemplate(columns, rows, help, widths, fileName) {
@@ -87,6 +106,10 @@ function writeTemplate(columns, rows, help, widths, fileName) {
 export function downloadQuestionTemplate(kind = "mixed", examType = "viva") {
   if (examType === "internal") {
     writeTemplate(INTERNAL_COLUMNS, INTERNAL_SAMPLES, INTERNAL_HELP, [90, 11, 7], "examify-internal-template.xlsx");
+    return;
+  }
+  if (examType === "external" && kind === "external_sets") {
+    writeTemplate(SETS_COLUMNS, SETS_SAMPLES, SETS_HELP, [5, 60, 9, 60, 18, 7, 10, 50, 30, 24, 30, 24, 24, 24], "examify-external-own-sets-template.xlsx");
     return;
   }
   if (examType === "external") {
@@ -155,7 +178,8 @@ function parseOptionAnswer(raw, options) {
 }
 
 const LANGUAGE_ALIASES = {
-  sql: ["sql", "mysql", "plsql", "pl/sql", "oracle", "postgres", "postgresql", "sqlite"],
+  sql: ["sql", "mysql", "oracle", "oraclesql", "postgres", "postgresql", "sqlite"],
+  plsql: ["plsql", "pl/sql", "oracleplsql", "plsql/sql"],
   python: ["python", "py", "python3"],
   c: ["c"],
   cpp: ["cpp", "c++", "cplusplus"],
@@ -187,11 +211,28 @@ function testColumn(header) {
   return { group: "legacy", n, part: part.startsWith("in") ? "input" : "output" };
 }
 
-// Shared row checks for internal and external sheets: header, duplicates, difficulty and marks.
+const SET_FIELDS = {
+  set: ["set", "set_no", "set_number", "set_num", "setno", "paper_set"],
+  context: ["schema", "context", "tables", "schema_and_data", "question_schema", "database"],
+};
+const MAX_SET = 500;
+const MAX_CONTEXT = 20000;
+
+// One question per set: the same question may sit in two of the teacher's own sets.
+const questionKey = (text, set) => `${set ? `${set}|` : ""}${normalizeText(text)}`;
+const existingKey = (item) => (typeof item === "string" ? questionKey(item) : questionKey(item.text, item.set));
+
+function parseSetNumber(raw) {
+  const value = String(raw ?? "").trim().replace(/^set\s*(no\.?|number)?\s*/i, "");
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 1 && n <= MAX_SET ? n : null;
+}
+
+// Shared row checks for internal and external sheets: header, sets, duplicates, difficulty and marks.
 function parseRowsWith(rows, existingTexts, extraFields, buildQuestion) {
   const issues = [];
   const questions = [];
-  const aliases = { ...FIELD_ALIASES, ...extraFields };
+  const aliases = { ...FIELD_ALIASES, ...SET_FIELDS, ...extraFields };
   const headerAt = rows.findIndex((row, i) => i < 15 && row.some((cell) => aliases.question.includes(normalizeHeader(cell))));
   if (headerAt < 0) {
     issues.push({ row: 1, level: "error", message: "No header row with a “question” column was found. Download the template to see the layout." });
@@ -214,7 +255,9 @@ function parseRowsWith(rows, existingTexts, extraFields, buildQuestion) {
     }
   });
 
-  const seen = new Map(existingTexts.map((text) => [normalizeText(text), 0]));
+  // A sheet with set numbers holds the teacher's own sets: then every row needs one.
+  const custom = col.set !== undefined && rows.slice(headerAt + 1).some((row) => String(row?.[col.set] ?? "").trim() !== "");
+  const seen = new Map(existingTexts.map((item) => [existingKey(item), 0]));
   let total = 0;
   for (let r = headerAt + 1; r < rows.length; r++) {
     const row = rows[r] || [];
@@ -232,6 +275,20 @@ function parseRowsWith(rows, existingTexts, extraFields, buildQuestion) {
       continue;
     }
     const question = { text, difficulty: "", marks: 1, row: rowNumber };
+    if (custom) {
+      const set = parseSetNumber(cell(col.set));
+      if (!set) {
+        error(cell(col.set) ? `Set “${cell(col.set)}” isn't a whole number from 1 to ${MAX_SET}.` : "This sheet has set numbers, so this row needs one too.");
+        continue;
+      }
+      question.set = set;
+    }
+    const context = raw(col.context).replace(/\s+$/, "");
+    if (context.length > MAX_CONTEXT) {
+      error(`The schema is longer than ${MAX_CONTEXT.toLocaleString("en-IN")} characters.`);
+      continue;
+    }
+    if (context) question.context = context;
     if (!buildQuestion(question, { cell, raw, col, tests, error, warn })) continue;
 
     const difficultyRaw = cell(col.difficulty);
@@ -246,15 +303,16 @@ function parseRowsWith(rows, existingTexts, extraFields, buildQuestion) {
       if (marks > 0 && marks <= 100) question.marks = marks;
       else warn(`Marks “${marksRaw}” isn't a number between 0 and 100, so it's 1.`);
     }
-    const key = normalizeText(text);
+    const key = questionKey(text, question.set);
     if (seen.has(key)) {
-      warn(seen.get(key) === 0 ? "Already in this exam, so it was skipped." : `Same question as row ${seen.get(key)}, so it was skipped.`);
+      const where = question.set ? ` in set ${question.set}` : "";
+      warn(seen.get(key) === 0 ? `Already in this exam${where}, so it was skipped.` : `Same question as row ${seen.get(key)}${where}, so it was skipped.`);
       continue;
     }
     seen.set(key, rowNumber);
     questions.push(question);
   }
-  return { questions, issues, total };
+  return { questions, issues, total, custom };
 }
 
 function parseInternalRows(rows, existingTexts) {
@@ -275,7 +333,7 @@ function parseExternalRows(rows, existingTexts) {
     question.type = "code";
     const language = parseLanguage(cell(col.language));
     if (language === null || !language) {
-      error(language === null ? `Unknown language “${cell(col.language)}”. Use sql, python, c, cpp, java, javascript, php, other or any.` : "The language is empty.");
+      error(language === null ? `Unknown language “${cell(col.language)}”. Use sql, plsql, python, c, cpp, java, javascript, php, other or any.` : "The language is empty.");
       return false;
     }
     question.language = language;
@@ -348,7 +406,7 @@ export function parseQuestionRows(rows, existingTexts = [], examType = "viva") {
     return { questions, issues, total: 0 };
   }
 
-  const seen = new Map(existingTexts.map((text) => [normalizeText(text), 0]));
+  const seen = new Map(existingTexts.map((item) => [existingKey(item), 0]));
   let total = 0;
   for (let r = headerAt + 1; r < rows.length; r++) {
     const row = rows[r] || [];
@@ -454,9 +512,43 @@ function readRows(sheet) {
   return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false, blankrows: false });
 }
 
+// The optional Sets sheet: set | schema, for tables a whole set shares.
+function parseSetContexts(rows, issues) {
+  const headerAt = rows.findIndex((row, i) => i < 15 && row.some((cell) => SET_FIELDS.set.includes(normalizeHeader(cell))));
+  if (headerAt < 0) {
+    issues.push({ row: 1, level: "warning", message: "Sets sheet: no header row with a “set” column, so it was ignored." });
+    return [];
+  }
+  const header = rows[headerAt].map(normalizeHeader);
+  const setCol = header.findIndex((h) => SET_FIELDS.set.includes(h));
+  const contextCol = header.findIndex((h) => SET_FIELDS.context.includes(h));
+  if (contextCol < 0) {
+    issues.push({ row: headerAt + 1, level: "warning", message: "Sets sheet: no “schema” column, so it was ignored." });
+    return [];
+  }
+  const contexts = new Map();
+  for (let r = headerAt + 1; r < rows.length; r++) {
+    const row = rows[r] || [];
+    const context = String(row[contextCol] ?? "").replace(/\s+$/, "");
+    if (!String(row[setCol] ?? "").trim() && !context) continue;
+    const set = parseSetNumber(row[setCol]);
+    if (!set) issues.push({ row: r + 1, level: "error", message: `Sets sheet: set “${String(row[setCol] ?? "").trim()}” isn't a whole number from 1 to ${MAX_SET}, so the row was skipped.` });
+    else if (context.length > MAX_CONTEXT) issues.push({ row: r + 1, level: "error", message: `Sets sheet: set ${set}'s schema is longer than ${MAX_CONTEXT.toLocaleString("en-IN")} characters.` });
+    else if (context) contexts.set(set, context);
+  }
+  return [...contexts].map(([number, context]) => ({ number, context }));
+}
+
 export async function parseQuestionFile(file, existingTexts = [], examType = "viva") {
   const book = XLSX.read(await file.arrayBuffer(), { type: "array" });
-  return parseQuestionRows(readRows(book.Sheets[book.SheetNames[0]]), existingTexts, examType);
+  const result = parseQuestionRows(readRows(book.Sheets[book.SheetNames[0]]), existingTexts, examType);
+  result.setContexts = [];
+  const setsSheet = book.SheetNames.slice(1).find((name) => /^sets?$/i.test(name.trim()));
+  if (setsSheet && examType !== "viva") {
+    if (result.custom) result.setContexts = parseSetContexts(readRows(book.Sheets[setsSheet]), result.issues);
+    else result.issues.push({ row: 1, level: "warning", message: "The Sets sheet was ignored: the questions have no set numbers." });
+  }
+  return result;
 }
 
 const ROLL_RE = /^[a-z]\d{6}$/i;

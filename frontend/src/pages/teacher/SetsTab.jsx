@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import toast from "react-hot-toast";
 import { ChevronDown, Layers3, Lock, Recycle, Save, Shuffle, SlidersHorizontal, Users } from "lucide-react";
+import { ContextSection } from "../../components/exam/DataText";
 import { DifficultyBadge, QuestionText } from "../../components/exam/ExamBits";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -12,11 +13,12 @@ import { Stepper, Switch } from "../../components/ui/Form";
 import { ConfirmModal, InfoTip } from "../../components/ui/Overlay";
 import { cn } from "../../lib/cn";
 import { teacherApi } from "../../lib/api";
-import { DIFFICULTY, pluralize } from "../../lib/format";
+import { DIFFICULTY, languageLabel, pluralize } from "../../lib/format";
 import { useDebounced } from "../../lib/hooks";
 
 const same = (a, b) =>
-  a.per_set === b.per_set && a.use_difficulty === b.use_difficulty && (!a.use_difficulty || (a.easy === b.easy && a.medium === b.medium && a.hard === b.hard));
+  Boolean(a.custom) === Boolean(b.custom) &&
+  (a.custom || (a.per_set === b.per_set && a.use_difficulty === b.use_difficulty && (!a.use_difficulty || (a.easy === b.easy && a.medium === b.medium && a.hard === b.hard))));
 
 // A sensible starting split when difficulty balancing is switched on: 40 / 40 / 20.
 function defaultSplit(perSet) {
@@ -25,7 +27,7 @@ function defaultSplit(perSet) {
   return { easy, medium: Math.max(0, perSet - easy - hard), hard };
 }
 
-function SetCard({ set, questions, students, open, onToggle }) {
+function SetCard({ set, questions, students, open, onToggle, custom }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
       <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-subtle/50">
@@ -40,7 +42,9 @@ function SetCard({ set, questions, students, open, onToggle }) {
             </span>
           </span>
         </span>
-        {set.reused_ids.length > 0 ? (
+        {custom ? (
+          set.context ? <Badge tone="info">Own tables</Badge> : null
+        ) : set.reused_ids.length > 0 ? (
           <Badge tone="warning" icon={Recycle}>
             {set.reused_ids.length} reused
           </Badge>
@@ -49,6 +53,7 @@ function SetCard({ set, questions, students, open, onToggle }) {
         )}
         <ChevronDown className={cn("h-4 w-4 text-muted transition", open && "rotate-180")} />
       </button>
+      {open && set.context && <ContextSection title="Tables and data for this set" text={set.context} defaultOpen={false} className="mx-4 mb-3" />}
       {open && (
         <ol className="divide-y divide-line border-t border-line">
           {set.question_ids.map((id) => {
@@ -59,6 +64,7 @@ function SetCard({ set, questions, students, open, onToggle }) {
                 <span className="w-9 shrink-0 font-medium tabular-nums text-muted">Q{q.number}</span>
                 <QuestionText text={q.text} className="min-w-0 flex-1 text-ink-2" />
                 <span className="flex shrink-0 items-center gap-1.5">
+                  {q.type === "code" && <Badge tone="primary">{languageLabel(q.language)}</Badge>}
                   {set.reused_ids.includes(id) && <Badge tone="warning">Reused</Badge>}
                   <DifficultyBadge difficulty={q.difficulty} />
                 </span>
@@ -104,6 +110,8 @@ export default function SetsTab() {
   }, [debounced, exam.id, exam.blueprint]);
 
   const report = dirty && preview ? preview : exam.report;
+  const numbered = exam.questions.some((q) => q.set > 0); // the sheet came with set numbers
+  const allNumbered = exam.questions.length > 0 && exam.questions.every((q) => q.set > 0);
   const pools = useMemo(() => {
     const count = (d) => exam.questions.filter((q) => q.difficulty === d).length;
     const untagged = exam.questions.filter((q) => !q.difficulty).length;
@@ -142,6 +150,8 @@ export default function SetsTab() {
     }
   };
 
+  const toggleCustom = (on) => setBp((current) => ({ ...current, custom: on, per_set: on ? current.per_set : current.per_set || 5 }));
+
   const toggleDifficulty = (on) => setBp((current) => ({ ...current, use_difficulty: on, ...(on && current.easy + current.medium + current.hard !== current.per_set ? defaultSplit(current.per_set) : {}) }));
 
   return (
@@ -154,63 +164,92 @@ export default function SetsTab() {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
         <Card>
-          <CardHeader icon={SlidersHorizontal} title="Blueprint" info="The recipe for every set: how many questions, and optionally how many of each difficulty. Examify makes as many sets as it takes to use every question at least once." description="What every set looks like. Examify works out how many sets your questions can make." />
+          <CardHeader
+            icon={SlidersHorizontal}
+            title="Blueprint"
+            info="The recipe for every set: how many questions, and optionally how many of each difficulty. Examify makes as many sets as it takes to use every question at least once."
+            description={bp.custom ? "Your own sets, as numbered in your question sheet." : "What every set looks like. Examify works out how many sets your questions can make."}
+          />
           <div className="space-y-6 p-5">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <div className="text-sm font-medium text-ink">
-                  Questions per set
-                  <InfoTip text="How many questions each student answers. With more questions than this, Examify makes several sets so neighbours get different papers." className="ml-1.5" />
-                </div>
-                <div className="text-[13px] text-muted">Every student answers this many.</div>
+            {(numbered || bp.custom) && (
+              <div className={cn(!bp.custom && "border-b border-line pb-5")}>
+                <Switch
+                  checked={Boolean(bp.custom)}
+                  onChange={toggleCustom}
+                  disabled={locked || (!bp.custom && !allNumbered)}
+                  label="Use your own sets"
+                  info="Each question goes to the set number it has in your sheet, and each student answers one whole set. Turn it off to have Examify build sets from the blueprint instead."
+                  description={
+                    !bp.custom && !allNumbered
+                      ? "Every question needs a set number first."
+                      : "Every question goes to its set number from your sheet. Students are dealt the sets in turn, by email order, so neighbours get different sets."
+                  }
+                />
               </div>
-              <Stepper
-                value={bp.per_set}
-                onChange={(per_set) => setBp((current) => ({ ...current, per_set, ...(current.use_difficulty ? defaultSplit(per_set) : {}) }))}
-                min={1}
-                max={200}
-                disabled={locked}
-                label="Questions per set"
-              />
-            </div>
-            <div className="border-t border-line pt-5">
-              <Switch
-                checked={bp.use_difficulty}
-                onChange={toggleDifficulty}
-                disabled={locked}
-                label="Balance by difficulty" info="Every set gets the same number of easy, medium and hard questions, so no set is easier than another."
-                description="Give every set the same mix of easy, medium and hard questions. If a level runs short, its questions are reused across sets."
-              />
-            </div>
-            {bp.use_difficulty && (
-              <div className="space-y-3 rounded-xl border border-line bg-subtle/50 p-4">
-                {["easy", "medium", "hard"].map((level) => (
-                  <div key={level} className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-2.5">
-                      <DifficultyBadge difficulty={level} />
-                      <span className="text-[13px] text-muted">
-                        {pools[level]} in the bank{level === "medium" && pools.untagged ? ` (${pools.untagged} untagged)` : ""}
+            )}
+            {!bp.custom && (
+              <>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium text-ink">
+                      Questions per set
+                      <InfoTip text="How many questions each student answers. With more questions than this, Examify makes several sets so neighbours get different papers." className="ml-1.5" />
+                    </div>
+                    <div className="text-[13px] text-muted">Every student answers this many.</div>
+                  </div>
+                  <Stepper
+                    value={bp.per_set}
+                    onChange={(per_set) => setBp((current) => ({ ...current, per_set, ...(current.use_difficulty ? defaultSplit(per_set) : {}) }))}
+                    min={1}
+                    max={200}
+                    disabled={locked}
+                    label="Questions per set"
+                  />
+                </div>
+                <div className="border-t border-line pt-5">
+                  <Switch
+                    checked={bp.use_difficulty}
+                    onChange={toggleDifficulty}
+                    disabled={locked}
+                    label="Balance by difficulty" info="Every set gets the same number of easy, medium and hard questions, so no set is easier than another."
+                    description="Give every set the same mix of easy, medium and hard questions. If a level runs short, its questions are reused across sets."
+                  />
+                </div>
+                {bp.use_difficulty && (
+                  <div className="space-y-3 rounded-xl border border-line bg-subtle/50 p-4">
+                    {["easy", "medium", "hard"].map((level) => (
+                      <div key={level} className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2.5">
+                          <DifficultyBadge difficulty={level} />
+                          <span className="text-[13px] text-muted">
+                            {pools[level]} in the bank{level === "medium" && pools.untagged ? ` (${pools.untagged} untagged)` : ""}
+                          </span>
+                        </div>
+                        <Stepper value={bp[level]} onChange={(n) => setBp((current) => ({ ...current, [level]: n }))} min={0} max={bp.per_set} disabled={locked} label={`${DIFFICULTY[level].label} per set`} />
+                      </div>
+                    ))}
+                    <div className={cn("flex items-center justify-between border-t border-line pt-3 text-[13px]", sumOk ? "text-muted" : "font-medium text-danger-text")}>
+                      <span>
+                        Easy + medium + hard
+                        <InfoTip text="The three counts must add up to the questions per set. In the bank shows how many questions of each level you have; a level with too few is reused across sets." className="ml-1" />
+                      </span>
+                      <span className="tabular-nums">
+                        {sum} of {bp.per_set}
                       </span>
                     </div>
-                    <Stepper value={bp[level]} onChange={(n) => setBp((current) => ({ ...current, [level]: n }))} min={0} max={bp.per_set} disabled={locked} label={`${DIFFICULTY[level].label} per set`} />
                   </div>
-                ))}
-                <div className={cn("flex items-center justify-between border-t border-line pt-3 text-[13px]", sumOk ? "text-muted" : "font-medium text-danger-text")}>
-                  <span>
-                    Easy + medium + hard
-                    <InfoTip text="The three counts must add up to the questions per set. In the bank shows how many questions of each level you have; a level with too few is reused across sets." className="ml-1" />
-                  </span>
-                  <span className="tabular-nums">
-                    {sum} of {bp.per_set}
-                  </span>
-                </div>
-              </div>
+                )}
+              </>
             )}
             {!locked && (
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-5">
-                <Button variant="ghost" icon={Shuffle} onClick={() => setConfirmShuffle(true)} disabled={!exam.sets.length || dirty}>
-                  Reshuffle sets
-                </Button>
+                {bp.custom ? (
+                  <span className="text-[13px] text-muted">Change a question's set from the Questions tab.</span>
+                ) : (
+                  <Button variant="ghost" icon={Shuffle} onClick={() => setConfirmShuffle(true)} disabled={!exam.sets.length || dirty}>
+                    Reshuffle sets
+                  </Button>
+                )}
                 <Button icon={Save} onClick={save} loading={saving} disabled={!dirty || !sumOk}>
                   {dirty ? "Save and rebuild sets" : "Saved"}
                 </Button>
@@ -227,11 +266,20 @@ export default function SetsTab() {
                 <div className="flex items-end gap-4">
                   <span className="text-6xl font-semibold tracking-tight text-ink">{report.set_count}</span>
                   <div className="pb-2">
-                    <div className="text-sm font-medium text-ink">{report.set_count === 1 ? "set" : "sets"} of {bp.per_set}</div>
-                    <div className="text-[13px] text-muted">
-                      {report.fully_unique_sets} fully unique
-                      {report.set_count - report.fully_unique_sets > 0 && ` · ${report.set_count - report.fully_unique_sets} topped up with reused questions`}
-                    </div>
+                    {bp.custom ? (
+                      <>
+                        <div className="text-sm font-medium text-ink">{report.set_count === 1 ? "set" : "sets"} of your own</div>
+                        <div className="text-[13px] text-muted">Each student answers one whole set.</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-sm font-medium text-ink">{report.set_count === 1 ? "set" : "sets"} of {bp.per_set}</div>
+                        <div className="text-[13px] text-muted">
+                          {report.fully_unique_sets} fully unique
+                          {report.set_count - report.fully_unique_sets > 0 && ` · ${report.set_count - report.fully_unique_sets} topped up with reused questions`}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="mt-6 space-y-4">
@@ -297,6 +345,7 @@ export default function SetsTab() {
                 set={set}
                 questions={questions}
                 students={perSet.get(set.number) || 0}
+                custom={Boolean(exam.blueprint.custom)}
                 open={openSet === set.number}
                 onToggle={() => setOpenSet(openSet === set.number ? null : set.number)}
               />

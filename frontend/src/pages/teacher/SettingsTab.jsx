@@ -206,7 +206,14 @@ export default function SettingsTab() {
         <CardHeader icon={Shuffle} title="Shuffling" info="Mixes up the order for each student, so neighbours on the same set see different papers." description="Students on the same set still see different papers." />
         <div className="divide-y divide-line">
           <div className="p-5">
-            <Switch checked={s.shuffle_questions} onChange={(v) => setSetting("shuffle_questions", v)} label="Shuffle question order" info="Each student sees their set's questions in a different order." />
+            <Switch
+              checked={s.shuffle_questions && !exam.blueprint?.custom}
+              onChange={(v) => setSetting("shuffle_questions", v)}
+              disabled={Boolean(exam.blueprint?.custom)}
+              label="Shuffle question order"
+              info="Each student sees their set's questions in a different order."
+              description={exam.blueprint?.custom ? "Your own sets keep the order of your sheet, so every student sees I before II." : undefined}
+            />
           </div>
           {exam.type === "viva" && (
             <div className="p-5">

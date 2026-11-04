@@ -5,12 +5,13 @@ import { java } from "@codemirror/lang-java";
 import { javascript } from "@codemirror/lang-javascript";
 import { php } from "@codemirror/lang-php";
 import { python } from "@codemirror/lang-python";
-import { MySQL, sql } from "@codemirror/lang-sql";
+import { MySQL, PLSQL, sql } from "@codemirror/lang-sql";
 import { cn } from "../../lib/cn";
 import { useIsDark } from "../../lib/hooks";
 
 const MODES = {
   sql: () => sql({ dialect: MySQL }),
+  plsql: () => sql({ dialect: PLSQL }),
   python: () => python(),
   c: () => cpp(),
   cpp: () => cpp(),

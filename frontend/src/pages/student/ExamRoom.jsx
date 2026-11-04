@@ -41,6 +41,8 @@ const BLOCKED_MESSAGES = {
 
 const CLIPBOARD_KINDS = new Set(["copy", "cut", "paste", "contextmenu", "drop"]);
 const HEARTBEAT_MS = 10000;
+// A locked student is waiting on the teacher: look for the unlock (or a submit) sooner.
+const LOCKED_CHECK_MS = 5000;
 const SAVE_DELAY_MS = 1200;
 
 // n210507@rguktn.ac.in is the testing account: the only student who may always
@@ -63,6 +65,7 @@ export default function ExamRoom() {
   const [info, setInfo] = useState(null);
   const [summary, setSummary] = useState(null);
   const [questions, setQuestions] = useState([]);
+  const [setContext, setSetContext] = useState(""); // tables and data for the student's set
   const [state, setState] = useState(null);
   const [answers, setAnswers] = useState({});
   const [runs, setRuns] = useState({}); // latest AI check per code question
@@ -101,6 +104,7 @@ export default function ExamRoom() {
       offsetRef.current = new Date(paper.state.server_now).getTime() - Date.now();
       setInfo(forThisStudent(paper.exam));
       setQuestions(paper.questions || []);
+      setSetContext(paper.set_context || "");
       answersRef.current = paper.answers || {};
       dirtyRef.current = false;
       setAnswers(answersRef.current);
@@ -156,7 +160,8 @@ export default function ExamRoom() {
     try {
       while (stateRef.current && pendingEvents.current.length) {
         try {
-          const { state: next } = await studentApi.event(stateRef.current.id, pendingEvents.current[0]);
+          const { type, id } = pendingEvents.current[0];
+          const { state: next } = await studentApi.event(stateRef.current.id, type, undefined, id);
           pendingEvents.current.shift();
           if (!pendingEvents.current.length) await handleState(next);
         } catch (error) {
@@ -232,6 +237,8 @@ export default function ExamRoom() {
         if (result.cached) toast("Same code as your last check, so here's that result again. It didn't use a check.", { id: "run", icon: "♻️" });
         return result;
       } catch (error) {
+        // The AI couldn't check it: the code screen says so in place of a result.
+        if (error.status === 503) return { busy: error.message };
         toast.error(error.status === 0 ? "You're offline. Your code is kept here; run it again once you're back online." : error.message, { id: "run", duration: 6000 });
         if (error.status === 409) syncRef.current();
         return null;
@@ -248,7 +255,8 @@ export default function ExamRoom() {
       if (now - lastViolation.current < 1500) return;
       lastViolation.current = now;
       setRoomState({ ...s, locked: true, lock_reason: LOCK_REASONS[type] });
-      pendingEvents.current.push(type);
+      // The id lets the server ignore a resend whose first try got through.
+      pendingEvents.current.push({ type, id: `${now.toString(36)}-${Math.random().toString(36).slice(2, 10)}` });
       flushEvents();
     },
     [flushEvents, setRoomState]
@@ -327,10 +335,25 @@ export default function ExamRoom() {
   }, [phase, examId]);
 
   // Heartbeat: autosave, report proctoring flags, pick up teacher actions.
+  const locked = Boolean(state?.locked);
   useEffect(() => {
     if (phase !== "running") return undefined;
-    const timer = setInterval(() => syncRef.current(), HEARTBEAT_MS);
+    const timer = setInterval(() => syncRef.current(), locked ? LOCKED_CHECK_MS : HEARTBEAT_MS);
     return () => clearInterval(timer);
+  }, [phase, locked]);
+
+  // Coming back to the tab checks straight away, so an unlock or a submit shows at once.
+  useEffect(() => {
+    if (phase !== "running") return undefined;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") syncRef.current();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
   }, [phase]);
 
   useEffect(() => {
@@ -482,7 +505,7 @@ export default function ExamRoom() {
   const answered = questions.filter((q) => isAnswered(answers[q.id])).length;
   const marked = questions.filter((q) => answers[q.id]?.marked).length;
   const unchecked = questions.filter((q) => isAnswered(answers[q.id]) && !checkIsCurrent(runs[q.id], q, answers[q.id])).length;
-  const room = { info, state, stream, offsetRef, onExpire: () => submit("time"), onSubmit: () => setSubmitOpen(true), onTools: () => setToolsOpen(true) };
+  const room = { info, state, setContext, stream, offsetRef, onExpire: () => submit("time"), onSubmit: () => setSubmitOpen(true), onTools: () => setToolsOpen(true) };
 
   return (
     <>

@@ -16,7 +16,7 @@ import (
 const (
 	// A student waits this long between checks, so one exam hall can't flood the API.
 	runCooldown = 5 * time.Second
-	runTimeout  = 75 * time.Second
+	runTimeout  = 150 * time.Second // two checks (public, then private) with model fallbacks
 )
 
 // runView is a check result as the student sees it.
@@ -36,7 +36,7 @@ type runView struct {
 func revealedTests(q Question, outcomes []TestOutcome) []PaperTest {
 	failed := map[string]bool{}
 	for _, o := range outcomes {
-		if !o.Executes {
+		if !o.Executes && !o.Skipped {
 			failed[o.ID] = true
 		}
 	}
@@ -76,9 +76,9 @@ func aiErrorResponse(err error) error {
 	}
 	var busy *aiBusyError
 	if errors.As(err, &busy) && busy.wait > 0 {
-		return newError(http.StatusServiceUnavailable, "The AI checker is busy. Your answer is saved; try again in about %d seconds.", int(math.Ceil(busy.wait.Seconds())))
+		return newError(http.StatusServiceUnavailable, "The AI evaluation pipeline is busy, so this couldn't be checked now. Your answer is saved and your teacher will check it by hand if needed. You can move on to the next question, or try Run again in about %d seconds.", int(math.Ceil(busy.wait.Seconds())))
 	}
-	return newError(http.StatusServiceUnavailable, "Couldn't check the code right now: the AI checker is busy. Your answer is saved; try again in a moment.")
+	return newError(http.StatusServiceUnavailable, "The AI evaluation pipeline is busy, so this couldn't be checked now. Your answer is saved and your teacher will check it by hand if needed. You can move on to the next question.")
 }
 
 // runCode saves a student's code and has the AI check it: how correct it is,
@@ -182,7 +182,7 @@ func runCode(c *gin.Context) {
 		return
 	}
 
-	verdict, err := checkWithAI(ctx, q, language, req.Code, exam.Context)
+	verdict, err := checkWithAI(ctx, q, language, req.Code, contextFor(exam, att.SetNumber, q))
 	if err != nil {
 		respondErr(c, aiErrorResponse(err))
 		return
@@ -244,7 +244,7 @@ func checkQuestion(c *gin.Context) {
 			language = "other"
 		}
 	}
-	verdict, err := checkWithAI(ctx, q, language, code, exam.Context)
+	verdict, err := checkWithAI(ctx, q, language, code, contextFor(exam, q.Set, q))
 	if err != nil {
 		respondErr(c, aiErrorResponse(err))
 		return

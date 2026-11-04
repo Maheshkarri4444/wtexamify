@@ -106,11 +106,26 @@ func GradeQuestion(q Question, a Answer, run *RunResult, multiScoring string) Qu
 		}
 		percent := max(0, min(100, run.Percent))
 		result.Percent = &percent
-		result.Awarded = round2(q.Marks * float64(percent) / 100)
+		// With test cases, marks follow the outputs: each test that passes earns
+		// its share, so one wrong query doesn't cost the whole question. Without
+		// them, the AI's overall correctness sets the marks.
+		share := float64(percent) / 100
+		if len(q.TestCases) > 0 {
+			passed := 0
+			for _, t := range q.TestCases {
+				for _, o := range run.Tests {
+					if o.ID == t.ID && o.Executes {
+						passed++
+					}
+				}
+			}
+			share = float64(passed) / float64(len(q.TestCases))
+		}
+		result.Awarded = round2(q.Marks * share)
 		switch {
-		case percent >= 100:
+		case share >= 1:
 			result.Status = ResultCorrect
-		case percent > 0:
+		case share > 0:
 			result.Status = ResultPartial
 		default:
 			result.Status = ResultWrong

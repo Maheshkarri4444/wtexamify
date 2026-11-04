@@ -1,4 +1,5 @@
 import { ScrollText, Send } from "lucide-react";
+import { ContextSection } from "../../../components/exam/DataText";
 import { DifficultyBadge, QuestionText } from "../../../components/exam/ExamBits";
 import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
@@ -7,7 +8,7 @@ import { formatNumber, pluralize } from "../../../lib/format";
 import { RoomHeader } from "./ExamScreen";
 
 /** An internal: the student's question paper, read here and answered in the lab. */
-export default function PaperScreen({ info, state, questions, stream, offsetRef, onExpire, onSubmit, onTools }) {
+export default function PaperScreen({ info, state, setContext, questions, stream, offsetRef, onExpire, onSubmit, onTools }) {
   const marks = questions.reduce((sum, q) => sum + q.marks, 0);
   return (
     <div className={cn("min-h-screen bg-canvas", info.requirements.block_clipboard && "no-select")}>
@@ -36,6 +37,13 @@ export default function PaperScreen({ info, state, questions, stream, offsetRef,
           </div>
         )}
 
+        {questions.length > 0 && (setContext || info.context) && (
+          <div className="mt-6 space-y-3">
+            <ContextSection title="Tables and data for your set" text={setContext} />
+            <ContextSection title="Tables and data for every question" text={info.context} />
+          </div>
+        )}
+
         <ol className="mt-6 space-y-4">
           {questions.map((question, i) => (
             <li key={question.id}>
@@ -46,6 +54,7 @@ export default function PaperScreen({ info, state, questions, stream, offsetRef,
                   <span className="ml-auto text-xs font-medium text-muted">{pluralize(question.marks, "mark")}</span>
                 </div>
                 <QuestionText text={question.text} className="text-[16px] leading-relaxed text-ink" />
+                {question.context && <ContextSection title="Tables and data for this question" text={question.context} className="mt-4" />}
               </Card>
             </li>
           ))}

@@ -66,6 +66,11 @@ type Question struct {
 	Answers    []string `bson:"answers" json:"answers"` // accepted answers, for fill in the blank
 	Difficulty string   `bson:"difficulty" json:"difficulty"`
 	Marks      float64  `bson:"marks" json:"marks"`
+	// Set is the teacher's own set number, used when the exam has custom sets.
+	Set int `bson:"set,omitempty" json:"set"`
+	// Context is reference material for this question alone, such as the tables
+	// and rows it is about. Students see it, and the AI checks against it.
+	Context string `bson:"context,omitempty" json:"context"`
 	// Code questions only. Solution and hidden test cases never reach students.
 	Language    string     `bson:"language,omitempty" json:"language"`
 	Solution    string     `bson:"solution,omitempty" json:"solution"`
@@ -82,19 +87,30 @@ type TestCase struct {
 	Hidden bool `bson:"hidden" json:"hidden"`
 }
 
-// Blueprint describes what every set looks like.
+// Blueprint describes what every set looks like. With Custom, the sets are the
+// teacher's own: each question says which set it belongs to, and a set can
+// come with its own reference material (SetContexts).
 type Blueprint struct {
-	PerSet        int  `bson:"per_set" json:"per_set"`
-	UseDifficulty bool `bson:"use_difficulty" json:"use_difficulty"`
-	Easy          int  `bson:"easy" json:"easy"`
-	Medium        int  `bson:"medium" json:"medium"`
-	Hard          int  `bson:"hard" json:"hard"`
+	PerSet        int          `bson:"per_set" json:"per_set"`
+	UseDifficulty bool         `bson:"use_difficulty" json:"use_difficulty"`
+	Easy          int          `bson:"easy" json:"easy"`
+	Medium        int          `bson:"medium" json:"medium"`
+	Hard          int          `bson:"hard" json:"hard"`
+	Custom        bool         `bson:"custom" json:"custom"`
+	SetContexts   []SetContext `bson:"set_contexts,omitempty" json:"set_contexts"`
+}
+
+// SetContext is reference material (tables, rows, notes) for one custom set.
+type SetContext struct {
+	Number  int    `bson:"number" json:"number"`
+	Context string `bson:"context" json:"context"`
 }
 
 type QuestionSet struct {
 	Number      int      `bson:"number" json:"number"`
 	QuestionIDs []string `bson:"question_ids" json:"question_ids"`
 	ReusedIDs   []string `bson:"reused_ids" json:"reused_ids"` // questions that also appear in an earlier set
+	Context     string   `bson:"context,omitempty" json:"context"`
 }
 
 type BucketReport struct {
@@ -179,6 +195,8 @@ type Answer struct {
 type TestOutcome struct {
 	ID       string `bson:"id" json:"id"`
 	Executes bool   `bson:"executes" json:"executes"`
+	// Skipped marks a private test that wasn't checked because a public test failed.
+	Skipped bool `bson:"skipped,omitempty" json:"skipped,omitempty"`
 }
 
 // RunResult is the AI's verdict on one version of a student's code.
@@ -248,11 +266,14 @@ type Attempt struct {
 	Events           []Event           `bson:"events" json:"events"`
 	UserAgent        string            `bson:"user_agent" json:"user_agent"`
 	// External exams.
-	Runs         map[string]RunResult `bson:"runs" json:"-"`
-	RunCount     int                  `bson:"run_count" json:"run_count"`
-	LastRunAt    *time.Time           `bson:"last_run_at,omitempty" json:"last_run_at"`
-	Grading      string               `bson:"grading" json:"grading"`
-	GradingTries int                  `bson:"grading_tries" json:"-"`
+	Runs      map[string]RunResult `bson:"runs" json:"-"`
+	RunCount  int                  `bson:"run_count" json:"run_count"`
+	LastRunAt *time.Time           `bson:"last_run_at,omitempty" json:"last_run_at"`
+	// LastEventID is the id of the last violation the browser reported, so a
+	// resend after a lost reply doesn't lock the paper (and count) a second time.
+	LastEventID  string `bson:"last_event_id,omitempty" json:"-"`
+	Grading      string `bson:"grading" json:"grading"`
+	GradingTries int    `bson:"grading_tries" json:"-"`
 	// Marks the teacher set by hand, by question ID. They replace the automatic marks.
 	Overrides map[string]float64 `bson:"overrides" json:"overrides"`
 }

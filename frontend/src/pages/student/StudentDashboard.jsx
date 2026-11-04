@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, CalendarClock, CheckCircle2, Clock3, FileQuestion, Hourglass, Inbox, Maximize, MonitorUp, Play } from "lucide-react";
+import { ArrowRight, CalendarClock, CheckCircle2, Clock3, Code2, FileQuestion, GraduationCap, Hourglass, Inbox, ListChecks, Maximize, MonitorUp, Play } from "lucide-react";
 import { AppShell, Avatar } from "../../components/layout/AppShell";
 import { TypeIcon } from "../../components/exam/ExamBits";
 import { Badge } from "../../components/ui/Badge";
@@ -160,6 +160,26 @@ const StudentDashboard = () => {
           </div>
         </div>
       </Card>
+
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl border border-line bg-surface px-5 py-4 shadow-card">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text">
+          <GraduationCap className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-ink">Practise before your exam</div>
+          <p className="text-[13px] text-muted">A short demo of the exam room: running code, the lock box and teacher codes. Nothing is saved or marked.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/demo/external" className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-[13px] font-medium text-ink hover:bg-subtle">
+            <Code2 className="h-4 w-4 text-muted" />
+            Demo external
+          </Link>
+          <Link to="/demo/viva" className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-[13px] font-medium text-ink hover:bg-subtle">
+            <ListChecks className="h-4 w-4 text-muted" />
+            Demo viva
+          </Link>
+        </div>
+      </div>
 
       {cards === null ? (
         <div className="mt-8 grid gap-4 md:grid-cols-2">

@@ -56,7 +56,8 @@ export function Modal({ open, onClose, title, description, icon: Icon, iconTone 
             {dismissable && <IconButton icon={X} label="Close" size="sm" onClick={onClose} className="-mr-2 -mt-1" />}
           </div>
         )}
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-5">{children}</div>
+        {/* relative keeps absolutely placed text (the info tips' screen-reader text) inside the scroll area, so the dialog itself never scrolls */}
+        <div className="relative min-h-0 flex-1 overflow-y-auto px-6 pb-5">{children}</div>
         {footer && <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line bg-subtle/60 px-6 py-3.5">{footer}</div>}
       </div>
     </div>,
@@ -79,7 +80,7 @@ export function Drawer({ open, onClose, title, description, actions, children, w
           {actions}
           <IconButton icon={X} label="Close" size="sm" onClick={onClose} />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        <div className="relative min-h-0 flex-1 overflow-y-auto">{children}</div>
       </aside>
     </div>,
     document.body

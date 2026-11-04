@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -79,9 +80,12 @@ func TestPublicAndPrivateTests(t *testing.T) {
 		t.Fatalf("public tests should come first and IDs follow that order: %+v", q.TestCases)
 	}
 
-	threePublic := append(tests, TestCase{Input: "c", Output: "3"})
-	if _, err := cleanQuestion(Question{Text: "x", Language: "python", Solution: "y", TestCases: threePublic}, TypeExternal); err == nil || !strings.Contains(err.Error(), "2 public") {
-		t.Fatalf("more than 2 public tests must be refused, got %v", err)
+	tooManyPublic := []TestCase{}
+	for i := 0; i < 11; i++ {
+		tooManyPublic = append(tooManyPublic, TestCase{Input: fmt.Sprint(i), Output: "x"})
+	}
+	if _, err := cleanQuestion(Question{Text: "x", Language: "python", Solution: "y", TestCases: tooManyPublic}, TypeExternal); err == nil || !strings.Contains(err.Error(), "10 public") {
+		t.Fatalf("more than 10 public tests must be refused, got %v", err)
 	}
 	private := []TestCase{}
 	for i := 0; i < 11; i++ {
@@ -115,15 +119,22 @@ func TestGradeCodeUsesTheCheckOfTheSubmittedCode(t *testing.T) {
 	if r := GradeQuestion(q, Answer{Code: code}, nil, MultiStrict); r.Status != ResultPending {
 		t.Fatalf("unchecked code is pending, got %s", r.Status)
 	}
-	run := &RunResult{CodeHash: codeHash("sql", code), Percent: 80}
+	// With test cases, marks follow the outputs: 1 of 2 passing earns half.
+	run := &RunResult{CodeHash: codeHash("sql", code), Percent: 80, Tests: []TestOutcome{{ID: "t1", Executes: true}, {ID: "t2"}}}
 	r := GradeQuestion(q, Answer{Code: code}, run, MultiStrict)
-	if r.Status != ResultPartial || r.Awarded != 8 || r.Percent == nil || *r.Percent != 80 {
+	if r.Status != ResultPartial || r.Awarded != 5 || r.Percent == nil || *r.Percent != 80 {
+		t.Fatalf("1 of 2 outputs on 10 marks should be 5, got %+v", r)
+	}
+	// Without test cases, the AI's correctness sets the marks.
+	noTests := q
+	noTests.TestCases = nil
+	if r := GradeQuestion(noTests, Answer{Code: code}, run, MultiStrict); r.Awarded != 8 {
 		t.Fatalf("80%% of 10 marks should be 8, got %+v", r)
 	}
 	if r := GradeQuestion(q, Answer{Code: code + " order by name"}, run, MultiStrict); r.Status != ResultPending {
 		t.Fatalf("a check of older code must not be reused, got %s", r.Status)
 	}
-	full := &RunResult{CodeHash: codeHash("sql", code), Percent: 100}
+	full := &RunResult{CodeHash: codeHash("sql", code), Percent: 100, Tests: []TestOutcome{{ID: "t1", Executes: true}, {ID: "t2", Executes: true}}}
 	if r := GradeQuestion(q, Answer{Code: "  " + code + "\n"}, full, MultiStrict); r.Status != ResultCorrect || r.Awarded != 10 {
 		t.Fatalf("surrounding whitespace doesn't change the code: %+v", r)
 	}
@@ -305,7 +316,8 @@ func TestRefusedKeyHandsOverToTheBackup(t *testing.T) {
 	if err != nil || verdict.Percent != 90 || verdict.Model != "model-a" {
 		t.Fatalf("the backup key should answer with the best model: %+v %v", verdict, err)
 	}
-	if got := strings.Join(*asked, " "); got != "expired/model-a fresh/model-a" {
+	// Public tests first, then (they passed) the private one, both on the fresh key.
+	if got := strings.Join(*asked, " "); got != "expired/model-a fresh/model-a fresh/model-a" {
 		t.Fatalf("asked %s", got)
 	}
 	if _, resting := pausedUntil(keyName(0)); !resting {
@@ -315,7 +327,7 @@ func TestRefusedKeyHandsOverToTheBackup(t *testing.T) {
 	if _, err := checkWithAI(t.Context(), codeQuestion(), "sql", "select 1", ""); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(*asked, " "); got != "fresh/model-a" {
+	if got := strings.Join(*asked, " "); got != "fresh/model-a fresh/model-a" {
 		t.Fatalf("a resting key isn't asked again, but asked %s", got)
 	}
 }
@@ -334,7 +346,7 @@ func TestKeyOverQuotaTriesTheBackupBeforeAWeakerModel(t *testing.T) {
 	if err != nil || verdict.Model != "model-a" || verdict.Percent != 75 {
 		t.Fatalf("the spare key should answer on the best model: %+v %v", verdict, err)
 	}
-	if got := strings.Join(*asked, " "); got != "busy/model-a spare/model-a" {
+	if got := strings.Join(*asked, " "); got != "busy/model-a spare/model-a spare/model-a" {
 		t.Fatalf("asked %s", got)
 	}
 	if _, resting := pausedUntil(pairName(0, "model-a")); !resting {
@@ -356,5 +368,73 @@ func TestEveryKeyFailingIsReportedAsBusy(t *testing.T) {
 	var busy *aiBusyError
 	if !errors.As(err, &busy) || busy.wait <= 0 || busy.wait > 12*time.Second {
 		t.Fatalf("expected a busy error with Google's suggested wait, got %v", err)
+	}
+}
+
+func TestCustomSetsFollowTheTeachersNumbers(t *testing.T) {
+	qs := []Question{
+		{ID: "q1", Set: 2, Text: "a"}, {ID: "q2", Set: 1, Text: "b"}, {ID: "q3", Set: 2, Text: "c"}, {ID: "q4", Set: 5, Text: "d"},
+	}
+	sets, report := CustomSets(qs, []SetContext{{Number: 2, Context: "EMPLOYEE table"}})
+	if !report.OK || len(sets) != 3 || sets[0].Number != 1 || sets[1].Number != 2 || sets[2].Number != 5 {
+		t.Fatalf("sets should be 1, 2 and 5: %+v %+v", sets, report)
+	}
+	if strings.Join(sets[1].QuestionIDs, ",") != "q1,q3" || sets[1].Context != "EMPLOYEE table" || sets[0].Context != "" {
+		t.Fatalf("set 2 keeps sheet order and its schema: %+v", sets[1])
+	}
+	if a := dealSets([]string{"c@x.in", "a@x.in", "b@x.in", "d@x.in"}, sets); a[0].Set != 1 || a[1].Set != 2 || a[2].Set != 5 || a[3].Set != 1 {
+		t.Fatalf("students are dealt the real set numbers in email order: %+v", a)
+	}
+	if _, report := CustomSets(append(qs, Question{ID: "q5", Text: "no set"}), nil); report.OK || len(report.Errors) == 0 {
+		t.Fatal("a question without a set number must be reported")
+	}
+}
+
+func TestContextForJoinsExamSetAndQuestion(t *testing.T) {
+	e := &Exam{Context: "shared", Sets: []QuestionSet{{Number: 3, Context: "set three"}}}
+	q := Question{Context: "own"}
+	got := contextFor(e, 3, q)
+	if !strings.Contains(got, "For every question:\nshared") || !strings.Contains(got, "For this set:\nset three") || !strings.Contains(got, "For this question:\nown") {
+		t.Fatalf("all three levels, labelled: %q", got)
+	}
+	if got := contextFor(&Exam{}, 1, q); got != "own" {
+		t.Fatalf("a single level needs no label: %q", got)
+	}
+}
+
+func TestOwnSetsKeepTheSheetOrder(t *testing.T) {
+	e := &Exam{Settings: Settings{ShuffleQuestions: true}, Blueprint: Blueprint{Custom: true}}
+	for i := 0; i < 6; i++ {
+		e.Questions = append(e.Questions, Question{ID: newQuestionID(), Type: QCode, Text: fmt.Sprintf("q%d", i), Set: 1})
+	}
+	e.Sets, _ = CustomSets(e.Questions, nil)
+	for seed := uint64(1); seed <= 20; seed++ {
+		ids, _ := buildPaper(e, 1, rand.New(rand.NewPCG(seed, seed)))
+		for i, id := range ids {
+			if id != e.Questions[i].ID {
+				t.Fatalf("seed %d: question %d moved; own sets must keep the sheet order", seed, i)
+			}
+		}
+	}
+	e.Blueprint.Custom = false
+	moved := false
+	for seed := uint64(1); seed <= 20 && !moved; seed++ {
+		ids, _ := buildPaper(e, 1, rand.New(rand.NewPCG(seed, seed)))
+		moved = ids[0] != e.Questions[0].ID
+	}
+	if !moved {
+		t.Fatal("generated sets should still shuffle")
+	}
+}
+
+func TestPLSQLIsALanguage(t *testing.T) {
+	q := Question{Type: QCode, Text: "Print the factorial of n.", Language: "plsql", Solution: "BEGIN NULL; END;", Set: 3}
+	clean, err := cleanQuestion(q, TypeExternal)
+	if err != nil || clean.Language != "plsql" || clean.Set != 3 {
+		t.Fatalf("a PL/SQL question in set 3 should be accepted: %+v, %v", clean, err)
+	}
+	q.Language = "cobol"
+	if _, err := cleanQuestion(q, TypeExternal); err == nil || !strings.Contains(err.Error(), `"cobol"`) || !strings.Contains(err.Error(), "plsql") {
+		t.Fatalf("an unknown language should be named, with the ones the server knows: %v", err)
 	}
 }

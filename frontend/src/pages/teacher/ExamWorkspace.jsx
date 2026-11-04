@@ -218,7 +218,7 @@ const ExamWorkspace = () => {
                 {formatMinutes(exam.duration_minutes)}
               </span>
               <span>{pluralize(exam.questions.length, "question")}</span>
-              <span>{pluralize(exam.sets.length, "set")} of {exam.blueprint.per_set}</span>
+              <span>{exam.blueprint.custom ? `${pluralize(exam.sets.length, "set")} of your own` : `${pluralize(exam.sets.length, "set")} of ${exam.blueprint.per_set}`}</span>
               <span>{pluralize(exam.allowed_students.length, "student")}</span>
               {stats.started > 0 && <span>{stats.submitted} / {stats.started} submitted</span>}
             </div>

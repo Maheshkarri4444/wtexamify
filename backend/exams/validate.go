@@ -17,7 +17,7 @@ const (
 	maxAnswerText   = 500
 	maxCodeLength   = 20000
 	maxStarterCode  = 5000
-	maxPublicTests  = 2  // shown to students next to the question
+	maxPublicTests  = 10 // shown to students next to the question (a query question's outputs a to e, say)
 	maxPrivateTests = 10 // shown only once a student's code fails one
 	maxTestText     = 2000
 	maxContext      = 20000
@@ -25,7 +25,7 @@ const (
 
 // Languages a code question can be answered in. "any" lets the student choose.
 var languages = map[string]string{
-	"sql": "SQL", "python": "Python", "c": "C", "cpp": "C++", "java": "Java",
+	"sql": "SQL", "plsql": "PL/SQL", "python": "Python", "c": "C", "cpp": "C++", "java": "Java",
 	"javascript": "JavaScript", "php": "PHP", "other": "Other",
 }
 
@@ -37,6 +37,16 @@ var questionTypes = map[string][]string{
 }
 
 func runeLen(s string) int { return utf8.RuneCountInString(s) }
+
+// languageNames lists the language codes a question may use, for error messages.
+func languageNames() string {
+	names := make([]string, 0, len(languages)+1)
+	for code := range languages {
+		names = append(names, code)
+	}
+	sort.Strings(names)
+	return strings.Join(append(names, LangAny), ", ")
+}
 
 var (
 	rollNumberRe = regexp.MustCompile(`^[a-z]\d{6}$`)
@@ -83,6 +93,17 @@ func cleanQuestion(q Question, examType string) (Question, error) {
 	if !validQuestionID(q.ID) {
 		q.ID = newQuestionID()
 	}
+	if q.Set < 0 || q.Set > maxSets {
+		return q, fmt.Errorf("set numbers go from 1 to %d", maxSets)
+	}
+	// Tables and data belong with questions students answer from them.
+	q.Context = strings.TrimRight(q.Context, " \t\n")
+	if q.Type != QCode && q.Type != QDescriptive {
+		q.Context = ""
+	}
+	if runeLen(q.Context) > maxContext {
+		return q, fmt.Errorf("the question's schema and data are longer than %d characters", maxContext)
+	}
 	if q.Type != QCode {
 		q.Language, q.Solution, q.StarterCode, q.TestCases = "", "", "", []TestCase{}
 	}
@@ -94,7 +115,10 @@ func cleanQuestion(q Question, examType string) (Question, error) {
 		q.Options, q.Correct, q.Answers = []string{}, []int{}, []string{}
 		q.Language = strings.ToLower(strings.TrimSpace(q.Language))
 		if _, ok := languages[q.Language]; !ok && q.Language != LangAny {
-			return q, errors.New("pick the language this question is answered in")
+			if q.Language == "" {
+				return q, errors.New("pick the language this question is answered in")
+			}
+			return q, fmt.Errorf("this server doesn't know the language %q (it knows %s)", q.Language, languageNames())
 		}
 		q.Solution = strings.TrimSpace(q.Solution)
 		if q.Solution == "" {
@@ -202,7 +226,44 @@ func cleanQuestion(q Question, examType string) (Question, error) {
 	return q, nil
 }
 
+// mergeSetContexts adds or replaces sets' schema and data, keeping the rest.
+func mergeSetContexts(current, incoming []SetContext) ([]SetContext, error) {
+	byNumber := map[int]string{}
+	order := []int{}
+	for _, c := range append(append([]SetContext{}, current...), incoming...) {
+		c.Context = strings.TrimRight(c.Context, " \t\n")
+		if c.Number < 1 || c.Number > maxSets {
+			return nil, fmt.Errorf("set numbers go from 1 to %d", maxSets)
+		}
+		if runeLen(c.Context) > maxContext {
+			return nil, fmt.Errorf("set %d's schema and data are longer than %d characters", c.Number, maxContext)
+		}
+		if _, seen := byNumber[c.Number]; !seen {
+			order = append(order, c.Number)
+		}
+		byNumber[c.Number] = c.Context
+	}
+	merged := []SetContext{}
+	for _, n := range order {
+		if byNumber[n] != "" {
+			merged = append(merged, SetContext{Number: n, Context: byNumber[n]})
+		}
+	}
+	return merged, nil
+}
+
 func validateBlueprint(bp Blueprint) error {
+	for _, c := range bp.SetContexts {
+		if c.Number < 1 || c.Number > maxSets {
+			return fmt.Errorf("set numbers go from 1 to %d", maxSets)
+		}
+		if runeLen(c.Context) > maxContext {
+			return fmt.Errorf("set %d's schema and data are longer than %d characters", c.Number, maxContext)
+		}
+	}
+	if bp.Custom {
+		return nil // the teacher's own sets: no per-set counts to check
+	}
 	if bp.PerSet < 1 || bp.PerSet > 200 {
 		return errors.New("questions per set must be between 1 and 200")
 	}

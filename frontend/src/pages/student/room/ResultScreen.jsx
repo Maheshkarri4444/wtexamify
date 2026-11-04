@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, Check, CheckCircle2, CircleDashed, Hourglass, PartyPopper, ScrollText, X, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, CheckCircle2, CircleDashed, Hourglass, MinusCircle, PartyPopper, ScrollText, X, XCircle } from "lucide-react";
 import { Logo, ThemeToggle } from "../../../components/layout/AppShell";
 import { QuestionText } from "../../../components/exam/ExamBits";
 import { Badge } from "../../../components/ui/Badge";
@@ -9,7 +9,7 @@ import { ProgressRing } from "../../../components/ui/Data";
 import { Spinner } from "../../../components/ui/Feedback";
 import { cn } from "../../../lib/cn";
 import { studentApi } from "../../../lib/api";
-import { SUBMIT_REASONS, formatNumber, languageLabel, letter, scoreTone, testLabels } from "../../../lib/format";
+import { SUBMIT_REASONS, formatNumber, languageLabel, letter, paperLabels, scoreTone, testLabels, testOutcome } from "../../../lib/format";
 
 const RESULT = {
   correct: { label: "Correct", tone: "success", icon: CheckCircle2 },
@@ -19,9 +19,17 @@ const RESULT = {
   pending: { label: "Being checked", tone: "info", icon: Hourglass },
 };
 
+const OUTCOMES = {
+  passed: { text: "Will execute", tone: "border-success/30 bg-success-soft text-success-text", icon: CheckCircle2 },
+  failed: { text: "Will not execute", tone: "border-danger/25 bg-danger-soft text-danger-text", icon: XCircle },
+  skipped: { text: "Not run", tone: "border-line bg-subtle/60 text-muted", icon: MinusCircle },
+  none: { text: "Not checked", tone: "border-line bg-subtle/60 text-muted", icon: MinusCircle },
+};
+
 function CodeReview({ item }) {
   const tests = item.tests || [];
   const labels = testLabels(tests);
+  const run = { tests: item.outcomes };
   return (
     <div className="mt-3 space-y-3">
       <div>
@@ -35,18 +43,16 @@ function CodeReview({ item }) {
       {tests.length > 0 && item.outcomes?.length > 0 && (
         <ul className="space-y-1.5">
           {tests.map((test, i) => {
-            const passed = Boolean(item.outcomes.find((t) => t.id === test.id)?.executes);
+            const state = testOutcome(run, test);
+            const outcome = OUTCOMES[state];
             return (
-              <li
-                key={test.id}
-                className={cn("rounded-lg border px-3 py-2 text-[13px]", passed ? "border-success/30 bg-success-soft text-success-text" : "border-danger/25 bg-danger-soft text-danger-text")}
-              >
+              <li key={test.id} className={cn("rounded-lg border px-3 py-2 text-[13px]", outcome.tone)}>
                 <div className="flex items-center gap-2">
-                  {passed ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}
+                  <outcome.icon className="h-4 w-4 shrink-0" />
                   <span className="font-medium">{labels[i]}</span>
-                  <span className="ml-auto text-xs font-medium">{passed ? "Passed" : "Failed"}</span>
+                  <span className="ml-auto text-xs font-medium">{outcome.text}</span>
                 </div>
-                {!passed && (
+                {state === "failed" && (
                   <div className="mt-1.5 truncate pl-6 font-mono text-xs text-ink-2" title={`${test.input} → ${test.output}`}>
                     {test.input ? `${test.input.split("\n")[0]} → ` : "Expected: "}
                     {test.output.split("\n").join(", ")}
@@ -67,12 +73,12 @@ function CodeReview({ item }) {
   );
 }
 
-function ReviewItem({ item }) {
+function ReviewItem({ item, label }) {
   const result = RESULT[item.status] || RESULT.unanswered;
   return (
     <Card className="p-5">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <span className="text-sm font-semibold text-muted">Q{item.number}</span>
+        <span className="text-sm font-semibold text-muted">{label || `Q${item.number}`}</span>
         {item.type === "code" && <Badge tone="primary">{languageLabel(item.language)}</Badge>}
         <Badge tone={result.tone} icon={result.icon} className="ml-auto">
           {result.label}
@@ -202,8 +208,8 @@ export default function ResultScreen({ info, state: submitted }) {
         {showScore && result.review?.length > 0 && (
           <div className="mt-8 space-y-3">
             <h2 className="text-base font-semibold text-ink">Your answers</h2>
-            {result.review.map((item) => (
-              <ReviewItem key={item.number} item={item} />
+            {result.review.map((item, i, all) => (
+              <ReviewItem key={item.number} item={item} label={paperLabels(all.map((r) => r.text))?.[i]} />
             ))}
           </div>
         )}

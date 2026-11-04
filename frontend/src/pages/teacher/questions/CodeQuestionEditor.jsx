@@ -12,21 +12,23 @@ import { cn } from "../../../lib/cn";
 import { teacherApi } from "../../../lib/api";
 import { LANGUAGES, MAX_PRIVATE_TESTS, MAX_PUBLIC_TESTS, scoreTone, testLabels } from "../../../lib/format";
 
-const BLANK = { type: "code", text: "", language: "sql", solution: "", starter_code: "", difficulty: "", marks: 10 };
+const BLANK = { type: "code", text: "", language: "sql", solution: "", starter_code: "", difficulty: "", marks: 10, set: 0, context: "" };
 const blankTest = (hidden) => ({ input: "", output: "", hidden });
 const filled = (t) => t.input.trim() !== "" || t.output.trim() !== "";
+const PUBLIC_SLOTS = 2; // empty public slots a new question starts with
 
-// The form keeps the two public slots and the private list apart; they're
-// joined (public first) only when saving.
+// The form keeps the public and private lists apart; they're joined (public
+// first) only when saving.
 function fromQuestion(question) {
   const tests = question?.test_cases || [];
   const shown = tests.filter((t) => !t.hidden).map((t) => ({ ...t }));
-  while (shown.length < MAX_PUBLIC_TESTS) shown.push(blankTest(false));
+  while (shown.length < PUBLIC_SLOTS) shown.push(blankTest(false));
   return { ...BLANK, ...question, public_tests: shown, private_tests: tests.filter((t) => t.hidden).map((t) => ({ ...t })) };
 }
 
-function validate(q) {
+function validate(q, customSets) {
   if (!q.text.trim()) return "Write the question.";
+  if (customSets && !q.set) return "Pick the set this question belongs to.";
   if (!q.solution.trim()) return "Add your answer: the AI compares each student's code with it.";
   for (const [list, kind] of [
     [q.public_tests, "Public"],
@@ -42,6 +44,8 @@ function clean(q) {
   return {
     type: "code",
     text: q.text.trim(),
+    set: q.set || 0,
+    context: q.context || "",
     language: q.language,
     solution: q.solution,
     starter_code: q.starter_code,
@@ -77,11 +81,12 @@ function TestRow({ label, test, language, onChange, onRemove }) {
   );
 }
 
-export default function CodeQuestionEditor({ open, onClose, question, onSave, saving, examId }) {
+export default function CodeQuestionEditor({ open, onClose, question, onSave, saving, examId, customSets = false, setNumbers = [] }) {
   const editing = Boolean(question);
   const [q, setQ] = useState(() => fromQuestion(question));
   const [error, setError] = useState("");
   const [showStarter, setShowStarter] = useState(false);
+  const [showContext, setShowContext] = useState(false);
   const [check, setCheck] = useState(null);
   const [checking, setChecking] = useState(false);
   const textRef = useRef(null);
@@ -89,12 +94,14 @@ export default function CodeQuestionEditor({ open, onClose, question, onSave, sa
   useEffect(() => {
     if (open) {
       const next = fromQuestion(question);
+      if (customSets && !next.set) next.set = setNumbers[setNumbers.length - 1] || 1;
       setQ(next);
       setShowStarter(Boolean(next.starter_code));
+      setShowContext(Boolean(next.context));
       setError("");
       setCheck(null);
     }
-  }, [open, question]);
+  }, [open, question]); // eslint-disable-line react-hooks/exhaustive-deps -- reset only when the editor opens
 
   const update = (patch) => {
     setQ((current) => ({ ...current, ...patch }));
@@ -103,30 +110,34 @@ export default function CodeQuestionEditor({ open, onClose, question, onSave, sa
   };
   const setTest = (group, i, patch) => update({ [group]: q[group].map((t, j) => (j === i ? { ...t, ...patch } : t)) });
 
+  // Tables switched off aren't saved, though the text stays in the form.
+  const toSave = () => clean({ ...q, context: showContext ? q.context : "" });
+
   const submit = async (another) => {
-    const problem = validate(q);
+    const problem = validate(q, customSets);
     if (problem) {
       setError(problem);
       return;
     }
-    const ok = await onSave(clean(q), another);
+    const ok = await onSave(toSave(), another);
     if (ok && another) {
-      setQ((current) => ({ ...fromQuestion(null), language: current.language, difficulty: current.difficulty, marks: current.marks }));
+      setQ((current) => ({ ...fromQuestion(null), language: current.language, difficulty: current.difficulty, marks: current.marks, set: current.set }));
       setShowStarter(false);
+      setShowContext(false);
       setCheck(null);
       textRef.current?.focus();
     }
   };
 
   const runCheck = async () => {
-    const problem = validate(q);
+    const problem = validate(q, customSets);
     if (problem) {
       setError(problem);
       return;
     }
     setChecking(true);
     try {
-      setCheck(await teacherApi.checkQuestion(examId, clean(q)));
+      setCheck(await teacherApi.checkQuestion(examId, toSave()));
     } catch (err) {
       toast.error(err.message, { duration: 6000 });
     } finally {
@@ -179,7 +190,32 @@ export default function CodeQuestionEditor({ open, onClose, question, onSave, sa
           )}
         </Field>
 
+        <div className="rounded-xl border border-line p-4">
+          <Switch
+            checked={showContext}
+            onChange={setShowContext}
+            label="Tables and data for this question"
+            info="Students see them above the question, and the AI checks their code against them."
+            description="Students see them above the question. Separate blocks with a blank line; a title line (Table: Employee) and rows of values separated by | show as a table."
+          />
+          {showContext && (
+            <Textarea
+              rows={8}
+              value={q.context}
+              onChange={(e) => update({ context: e.target.value })}
+              placeholder={"Table: Employee\nEMP_ID | NAME | SALARY | D_NO\n101 | James | 55000 | 1\n102 | Franklin | 40000 | 5"}
+              className="mt-3 font-mono text-[12.5px]"
+              aria-label="Tables and data for this question"
+            />
+          )}
+        </div>
+
         <div className="flex flex-wrap items-end gap-6">
+          {customSets && (
+            <Field label="Set" info="This exam uses your own sets: the set this question belongs to. Each student answers one whole set.">
+              <Stepper value={q.set || 1} onChange={(set) => update({ set })} min={1} max={500} label="Set" />
+            </Field>
+          )}
           <Field label="Language" info="The language students answer in. Pick Any language to let each student choose their own." className="w-56">
             {(id) => (
               <Select id={id} value={q.language} onChange={(e) => update({ language: e.target.value })}>
@@ -204,7 +240,7 @@ export default function CodeQuestionEditor({ open, onClose, question, onSave, sa
               ]}
             />
           </Field>
-          <Field label="Marks" info="A student earns these marks times the AI's correctness: 80% correct earns 80% of the marks.">
+          <Field label="Marks" info="With test cases, marks follow the tests that will execute: 4 of 5 earns 80% of the marks. Without them, the AI's correctness % does.">
             <Stepper value={q.marks} onChange={(marks) => update({ marks })} min={1} max={100} label="Marks" />
           </Field>
         </div>
@@ -228,16 +264,37 @@ export default function CodeQuestionEditor({ open, onClose, question, onSave, sa
         </div>
 
         <section>
-          <div className="mb-2">
-            <div className="flex items-center gap-1 text-[13px] font-medium text-ink-2">
-              Public test cases
-              <InfoTip text="Students see these next to the question: the input and the expected output. When they press Run, they find out whether their code would pass each one." />
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-1 text-[13px] font-medium text-ink-2">
+                Public test cases
+                <span className="font-normal tabular-nums text-muted">
+                  {q.public_tests.length} of {MAX_PUBLIC_TESTS}
+                </span>
+                <InfoTip text="Students see these next to the question: the input and the expected output. They're checked first when students press Run." />
+              </div>
+              <p className="text-xs text-muted">Shown to students, and checked first. For queries a to e, add one per query. Leave them empty if this question has no test cases: the AI then compares the code with your answer.</p>
             </div>
-            <p className="text-xs text-muted">Up to {MAX_PUBLIC_TESTS}, shown to students. Leave both empty if this question has no test cases: the AI then compares the code with your answer.</p>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={Plus}
+              disabled={q.public_tests.length >= MAX_PUBLIC_TESTS}
+              onClick={() => update({ public_tests: [...q.public_tests, blankTest(false)] })}
+            >
+              Add public test
+            </Button>
           </div>
           <div className="grid gap-2.5">
             {q.public_tests.map((test, i) => (
-              <TestRow key={i} label={`Public test ${i + 1}`} test={test} language={q.language} onChange={(patch) => setTest("public_tests", i, patch)} />
+              <TestRow
+                key={i}
+                label={`Public test ${i + 1}`}
+                test={test}
+                language={q.language}
+                onChange={(patch) => setTest("public_tests", i, patch)}
+                onRemove={q.public_tests.length > PUBLIC_SLOTS ? () => update({ public_tests: q.public_tests.filter((_, j) => j !== i) }) : undefined}
+              />
             ))}
           </div>
         </section>
@@ -250,9 +307,9 @@ export default function CodeQuestionEditor({ open, onClose, question, onSave, sa
                 <span className="font-normal tabular-nums text-muted">
                   {q.private_tests.length} of {MAX_PRIVATE_TESTS}
                 </span>
-                <InfoTip text="Run together with the public tests every time. Students only see how many passed. When their code fails a private test, they're shown that test's input and expected output, like LeetCode." />
+                <InfoTip text="Checked only once every public test passes. Students only see how many passed. When their code fails a private test, they're shown that test's input and expected output, like LeetCode." />
               </div>
-              <p className="text-xs text-muted">Catch answers that only work for the public examples. Students see one only after their code fails it.</p>
+              <p className="text-xs text-muted">Catch answers that only work for the public examples. Checked after the public ones pass; students see one only after their code fails it.</p>
             </div>
             <Button
               size="sm"
@@ -292,8 +349,8 @@ export default function CodeQuestionEditor({ open, onClose, question, onSave, sa
             {check.tests.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
                 {check.tests.map((t, i) => (
-                  <Badge key={t.id} tone={t.executes ? "success" : "danger"} icon={t.executes ? CheckCircle2 : XCircle}>
-                    {checkLabels[i]}: {t.executes ? "passes" : "fails"}
+                  <Badge key={t.id} tone={t.executes ? "success" : t.skipped ? "neutral" : "danger"} icon={t.executes ? CheckCircle2 : XCircle}>
+                    {checkLabels[i]}: {t.executes ? "will execute" : t.skipped ? "not run" : "will not execute"}
                   </Badge>
                 ))}
               </div>

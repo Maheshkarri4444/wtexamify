@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import {
   AlertTriangle,
@@ -14,6 +14,7 @@ import {
   KeyRound,
   Lock,
   LogIn,
+  MinusCircle,
   Pencil,
   Play,
   RefreshCw,
@@ -32,7 +33,14 @@ import { Input, Segmented } from "../../components/ui/Form";
 import { Drawer, InfoTip } from "../../components/ui/Overlay";
 import { cn } from "../../lib/cn";
 import { teacherApi } from "../../lib/api";
-import { SUBMIT_REASONS, formatNumber, formatTime, languageLabel, letter, scoreTone, testLabels, timeAgo } from "../../lib/format";
+import { SUBMIT_REASONS, formatNumber, formatTime, languageLabel, letter, paperLabels, partGroups, questionLabel, scoreTone, splitShared, testLabels, testOutcome, timeAgo } from "../../lib/format";
+
+const OUTCOME = {
+  passed: { label: "Passed", text: "text-success-text", icon: CheckCircle2, iconTone: "text-success" },
+  failed: { label: "Not passed", text: "text-danger-text", icon: X, iconTone: "text-danger" },
+  skipped: { label: "Not run", text: "text-muted", icon: MinusCircle, iconTone: "text-muted" },
+  none: { label: "Not checked", text: "text-muted", icon: MinusCircle, iconTone: "text-muted" },
+};
 
 const RESULT = {
   correct: { label: "Correct", tone: "success", icon: CheckCircle2 },
@@ -118,7 +126,7 @@ function MarksEditor({ item, onSave }) {
   );
 }
 
-function CodeAnswer({ item }) {
+function CodeAnswer({ item, aiFailed }) {
   const [showSolution, setShowSolution] = useState(false);
   const run = item.run;
   const tests = item.test_cases || [];
@@ -149,22 +157,29 @@ function CodeAnswer({ item }) {
           {tests.length > 0 && (
             <ul className="mt-3 space-y-1.5">
               {tests.map((test, i) => {
-                const outcome = (run.tests || []).find((t) => t.id === test.id);
+                const outcome = OUTCOME[testOutcome(run, test)];
                 return (
                   <li key={test.id} className="flex items-start gap-2.5 rounded-lg bg-subtle/60 px-3 py-2 text-[12.5px]">
-                    {outcome?.executes ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" /> : <X className="mt-0.5 h-4 w-4 shrink-0 text-danger" />}
+                    <outcome.icon className={cn("mt-0.5 h-4 w-4 shrink-0", outcome.iconTone)} />
                     <span className="w-28 shrink-0 font-semibold text-ink">{labels[i]}</span>
                     <span className="min-w-0 flex-1 truncate font-mono text-ink-2" title={`${test.input} → ${test.output}`}>
                       {test.input ? `${test.input.split("\n")[0]} → ` : ""}
                       {test.output.split("\n").join(", ")}
                     </span>
                     {test.hidden && <EyeOff className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" aria-label="Private test" />}
-                    <span className={cn("shrink-0 font-medium", outcome?.executes ? "text-success-text" : "text-danger-text")}>{outcome?.executes ? "Passed" : "Failed"}</span>
+                    <span className={cn("shrink-0 font-medium", outcome.text)}>{outcome.label}</span>
                   </li>
                 );
               })}
             </ul>
           )}
+        </div>
+      ) : aiFailed && item.code ? (
+        <div className="flex items-start gap-2.5 rounded-xl border border-warning/40 bg-warning-soft px-3 py-2.5 text-[13px] text-warning-text">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            <span className="font-semibold">AI error.</span> The AI evaluation pipeline couldn't check this answer. Mark it by hand with the marks button, or press Re-check.
+          </span>
         </div>
       ) : (
         item.code && <p className="text-xs text-muted">Not checked yet. It's checked automatically after the student submits.</p>
@@ -178,13 +193,54 @@ function CodeAnswer({ item }) {
   );
 }
 
-function AnswerItem({ item, onSaveMarks }) {
-  const result = RESULT[item.status] || RESULT.unanswered;
+/** The heading over a part's questions, II (a) to II (e): its name and the marks for all of it. */
+function PartHeader({ part, items, shared }) {
+  const awarded = items.reduce((sum, item) => sum + (item.awarded || 0), 0);
+  const max = items.reduce((sum, item) => sum + (item.max || 0), 0);
+  const sub = (item) => questionLabel(item.text)?.sub;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-line bg-subtle/60 px-6 py-2.5">
+      <span className="text-sm font-semibold text-ink">
+        Part {part}
+        <span className="font-normal text-muted">
+          {" "}
+          · {items.length} questions, ({sub(items[0])}) to ({sub(items[items.length - 1])})
+        </span>
+      </span>
+      <span className="text-sm font-semibold tabular-nums text-ink">
+        {formatNumber(awarded)} / {formatNumber(max)} marks
+      </span>
+      {shared && <QuestionText text={shared} className="basis-full text-[13px] leading-relaxed text-ink-2" />}
+    </div>
+  );
+}
+
+/** Every answer on the sheet, with the parts of a question (II (a) to II (e)) grouped under it. */
+function AnswerList({ items, onSaveMarks, grading }) {
+  const labels = paperLabels(items.map((item) => item.text));
+  return partGroups(items).map((group) => {
+    const parts = group.part && group.items.length > 1;
+    // The schema the parts share shows once, over them.
+    const { shared, own } = parts ? splitShared(group.items.map((item) => item.text)) : { shared: "", own: [] };
+    return (
+      <Fragment key={group.items[0].id}>
+        {parts && <PartHeader part={group.part} items={group.items} shared={shared} />}
+        {group.items.map((item, j) => (
+          <AnswerItem key={item.id} item={item} text={own[j]} label={labels?.[items.indexOf(item)]} onSaveMarks={onSaveMarks} grading={grading} />
+        ))}
+      </Fragment>
+    );
+  });
+}
+
+function AnswerItem({ item, text, label, onSaveMarks, grading }) {
+  const aiFailed = grading === "failed" && item.status === "pending";
+  const result = aiFailed ? { label: "AI error", tone: "warning", icon: AlertTriangle } : RESULT[item.status] || RESULT.unanswered;
   const order = item.display_order.length ? item.display_order : item.options.map((_, i) => i);
   return (
     <div className="border-b border-line px-6 py-5 last:border-0">
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 text-sm font-semibold text-muted">Q{item.number}</span>
+        <span className="mr-1 text-sm font-semibold text-muted">{label || `Q${item.number}`}</span>
         {item.type === "code" ? <Badge tone="primary">{languageLabel(item.language)}</Badge> : item.type !== "descriptive" && <QuestionTypeBadge type={item.type} />}
         <DifficultyBadge difficulty={item.difficulty} />
         {item.type !== "descriptive" && (
@@ -197,9 +253,9 @@ function AnswerItem({ item, onSaveMarks }) {
           <MarksEditor key={`${item.awarded}-${item.overridden}`} item={item} onSave={onSaveMarks} />
         </span>
       </div>
-      <QuestionText text={item.text} className="text-[15px] leading-relaxed text-ink" />
+      <QuestionText text={text ?? item.text} className="text-[15px] leading-relaxed text-ink" />
       {item.type === "code" ? (
-        <CodeAnswer item={item} />
+        <CodeAnswer item={item} aiFailed={aiFailed} />
       ) : item.type === "descriptive" ? null : item.type === "fill" ? (
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <div className="rounded-lg border border-line bg-subtle/60 px-3 py-2">
@@ -364,7 +420,7 @@ export default function AttemptDrawer({ examId, examType, examTitle, attemptId, 
             </span>
           </div>
           {view === "answers" ? (
-            data.items.map((item) => <AnswerItem key={item.id} item={item} onSaveMarks={saveMarks} />)
+            <AnswerList items={data.items} onSaveMarks={saveMarks} grading={data.grading} />
           ) : (
             <ol className="relative space-y-0 px-6 py-5">
               {data.events.map((event, i) => {

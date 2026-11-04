@@ -27,6 +27,15 @@ function CodeInput({ value, onChange, autoFocus }) {
   );
 }
 
+/** In the demo there's no teacher, so the code they'd type is shown right in the box. */
+function DemoCode({ label, code }) {
+  return (
+    <div className="mt-4 rounded-xl border-2 border-dashed border-primary/40 bg-primary-soft px-3 py-2.5 text-[13px] text-primary-text">
+      Demo only: in a real exam your teacher types the {label} here. For this demo it's <span className="font-mono text-base font-bold tracking-[0.2em]">{code}</span>
+    </div>
+  );
+}
+
 function OverlayShell({ children }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-canvas/95 p-4 backdrop-blur-xl">
@@ -36,7 +45,7 @@ function OverlayShell({ children }) {
   );
 }
 
-export function LockOverlay({ state, onUnlock, onRefresh }) {
+export function LockOverlay({ state, onUnlock, onRefresh, demoCodes }) {
   const [mode, setMode] = useState("unlock");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -66,6 +75,7 @@ export function LockOverlay({ state, onUnlock, onRefresh }) {
         </div>
       )}
       <p className="mt-5 text-sm leading-relaxed text-ink-2">Raise your hand. Your teacher will type the code here, or unlock you from their dashboard.</p>
+      {demoCodes && <DemoCode label={mode === "unlock" ? "exam's copy code" : "refresh code"} code={mode === "unlock" ? demoCodes.copy : demoCodes.refresh} />}
 
       <form onSubmit={submit} className="mt-5 space-y-3">
         <CodeInput value={code} onChange={setCode} autoFocus />
@@ -184,7 +194,7 @@ export function SubmitModal({ open, onClose, onConfirm, submitting, examType = "
   );
 }
 
-export function TeacherToolsModal({ open, onClose, onRefresh }) {
+export function TeacherToolsModal({ open, onClose, onRefresh, demoCode }) {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -200,6 +210,7 @@ export function TeacherToolsModal({ open, onClose, onRefresh }) {
   return (
     <Modal open={open} onClose={onClose} icon={KeyRound} title="Teacher tools" description="For your teacher only. The refresh code gives this student a different set and clears every answer." size="sm">
       <form onSubmit={submit} className="space-y-3 pt-1">
+        {demoCode && <DemoCode label="refresh code" code={demoCode} />}
         <CodeInput value={code} onChange={setCode} autoFocus />
         <Button type="submit" className="w-full" icon={RefreshCw} loading={busy} disabled={!code}>
           Give a new set

@@ -188,16 +188,85 @@ func idsOf(questions []Question, indexes []int) []string {
 // sorted by email, which is roll-number order for RGUKT addresses, and dealt
 // sets in turn, so roll-number neighbours (who usually sit together) differ.
 func AssignSets(emails []string, setCount int) []Assignment {
+	numbers := make([]int, setCount)
+	for i := range numbers {
+		numbers[i] = i + 1
+	}
+	return assignSetNumbers(emails, numbers)
+}
+
+// dealSets deals an exam's sets, whatever their numbers (a teacher's own sets
+// can skip numbers).
+func dealSets(emails []string, sets []QuestionSet) []Assignment {
+	numbers := make([]int, len(sets))
+	for i, s := range sets {
+		numbers[i] = s.Number
+	}
+	return assignSetNumbers(emails, numbers)
+}
+
+func assignSetNumbers(emails []string, numbers []int) []Assignment {
 	assignments := []Assignment{}
-	if setCount == 0 {
+	if len(numbers) == 0 {
 		return assignments
 	}
 	sorted := append([]string(nil), emails...)
 	sort.Strings(sorted)
 	for i, email := range sorted {
-		assignments = append(assignments, Assignment{Email: email, Set: i%setCount + 1})
+		assignments = append(assignments, Assignment{Email: email, Set: numbers[i%len(numbers)]})
 	}
 	return assignments
+}
+
+// CustomSets builds the teacher's own sets: every question goes to the set it
+// names, in sheet order, with that set's reference material attached.
+func CustomSets(questions []Question, contexts []SetContext) ([]QuestionSet, GenReport) {
+	report := GenReport{Buckets: []BucketReport{}, Errors: []string{}, Warnings: []string{}}
+	byNumber := map[int]*QuestionSet{}
+	numbers := []int{}
+	missing := 0
+	for _, q := range questions {
+		if q.Set <= 0 {
+			missing++
+			continue
+		}
+		set, ok := byNumber[q.Set]
+		if !ok {
+			set = &QuestionSet{Number: q.Set, QuestionIDs: []string{}, ReusedIDs: []string{}}
+			byNumber[q.Set] = set
+			numbers = append(numbers, q.Set)
+		}
+		set.QuestionIDs = append(set.QuestionIDs, q.ID)
+	}
+	if missing > 0 {
+		report.Errors = append(report.Errors, fmt.Sprintf("%d question(s) have no set number. With your own sets, every question needs one.", missing))
+	}
+	if len(numbers) == 0 {
+		if len(questions) > 0 && missing == 0 {
+			report.Errors = append(report.Errors, "No sets yet.")
+		}
+		return []QuestionSet{}, report
+	}
+	sort.Ints(numbers)
+	context := map[int]string{}
+	for _, c := range contexts {
+		context[c.Number] = c.Context
+	}
+	sets := make([]QuestionSet, 0, len(numbers))
+	sizes := map[int]bool{}
+	for _, n := range numbers {
+		set := *byNumber[n]
+		set.Context = context[n]
+		sizes[len(set.QuestionIDs)] = true
+		sets = append(sets, set)
+	}
+	if len(sizes) > 1 {
+		report.Warnings = append(report.Warnings, "Your sets have different numbers of questions, so some students get more questions than others.")
+	}
+	report.OK = missing == 0
+	report.SetCount = len(sets)
+	report.FullyUniqueSets = len(sets)
+	return sets, report
 }
 
 // leastAssignedSet picks the set with the fewest students, for students added
@@ -231,6 +300,45 @@ func assignedSet(e *Exam, email string) int {
 // regenerateSets rebuilds the sets after the questions or blueprint change and
 // re-deals them to every student. Only valid while the exam is unlocked.
 func regenerateSets(e *Exam) {
-	e.Sets, e.Report = GenerateSets(e.Questions, e.Blueprint, newRNG())
-	e.Assignments = AssignSets(e.AllowedStudents, len(e.Sets))
+	if e.Blueprint.Custom {
+		e.Sets, e.Report = CustomSets(e.Questions, e.Blueprint.SetContexts)
+		// Sets may differ in size; students see the largest as "questions per set".
+		e.Blueprint.PerSet = 0
+		for _, s := range e.Sets {
+			e.Blueprint.PerSet = max(e.Blueprint.PerSet, len(s.QuestionIDs))
+		}
+	} else {
+		e.Sets, e.Report = GenerateSets(e.Questions, e.Blueprint, newRNG())
+	}
+	e.Assignments = dealSets(e.AllowedStudents, e.Sets)
+}
+
+// setContext is the reference material of a student's set, if it has any.
+func setContext(e *Exam, number int) string {
+	for _, s := range e.Sets {
+		if s.Number == number {
+			return s.Context
+		}
+	}
+	return ""
+}
+
+// contextFor is all the reference material that comes with a question: the
+// whole exam's, its set's and its own, labelled so the AI can tell them apart.
+func contextFor(e *Exam, setNumber int, q Question) string {
+	parts := []string{}
+	add := func(label, text string) {
+		if text = strings.TrimSpace(text); text != "" {
+			parts = append(parts, label+":\n"+text)
+		}
+	}
+	add("For every question", e.Context)
+	add("For this set", setContext(e, setNumber))
+	add("For this question", q.Context)
+	if len(parts) == 1 {
+		// One source needs no label.
+		_, text, _ := strings.Cut(parts[0], ":\n")
+		return text
+	}
+	return strings.Join(parts, "\n\n")
 }

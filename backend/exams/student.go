@@ -235,7 +235,10 @@ func respondPaper(c *gin.Context, e *Exam, att *Attempt) {
 	if answers == nil {
 		answers = map[string]Answer{}
 	}
-	c.JSON(http.StatusOK, gin.H{"exam": infoFor(e, att.StudentEmail), "state": stateFor(e, att), "questions": questions, "answers": answers, "runs": runViews(e, att)})
+	c.JSON(http.StatusOK, gin.H{
+		"exam": infoFor(e, att.StudentEmail), "state": stateFor(e, att), "questions": questions, "answers": answers, "runs": runViews(e, att),
+		"set_context": setContext(e, att.SetNumber), // the student's set's own tables and data, for custom sets
+	})
 }
 
 func findExam(ctx context.Context, filter bson.M, projection bson.M) (*Exam, error) {
@@ -554,11 +557,13 @@ func attemptEvent(c *gin.Context) {
 	var req struct {
 		Type   string `json:"type"`
 		Detail string `json:"detail"`
+		ID     string `json:"id"` // set by the browser for violations, to spot resends
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondErr(c, newError(http.StatusBadRequest, "Invalid request body."))
 		return
 	}
+	req.ID = truncateRunes(req.ID, 64)
 	ctx, cancel := dbCtx()
 	defer cancel()
 	att, err := loadMyAttempt(ctx, c)
@@ -566,7 +571,8 @@ func attemptEvent(c *gin.Context) {
 		respondErr(c, err)
 		return
 	}
-	if att.Status != AttemptInProgress {
+	if att.Status != AttemptInProgress || (req.ID != "" && req.ID == att.LastEventID) {
+		// Submitted, or a resend of a violation that already counted.
 		respondState(ctx, c, att)
 		return
 	}
@@ -603,7 +609,7 @@ func attemptEvent(c *gin.Context) {
 		if !att.Locked {
 			event.Detail = "allowed for this exam"
 		}
-		_, err = attemptsCol().UpdateOne(ctx, bson.M{"_id": att.ID}, bson.M{"$push": bson.M{"events": eventPush(event)}})
+		_, err = attemptsCol().UpdateOne(ctx, bson.M{"_id": att.ID}, bson.M{"$push": bson.M{"events": eventPush(event)}, "$set": bson.M{"last_event_id": req.ID}})
 		if err != nil {
 			respondErr(c, err)
 			return
@@ -612,7 +618,7 @@ func attemptEvent(c *gin.Context) {
 		return
 	}
 	res, err := attemptsCol().UpdateOne(ctx, bson.M{"_id": att.ID, "status": AttemptInProgress, "locked": false}, bson.M{
-		"$set":  bson.M{"locked": true, "lock_reason": reason, "last_seen_at": now},
+		"$set":  bson.M{"locked": true, "lock_reason": reason, "last_seen_at": now, "last_event_id": req.ID},
 		"$inc":  bson.M{"violations": 1},
 		"$push": bson.M{"events": eventPush(event)},
 	})

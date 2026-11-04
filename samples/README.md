@@ -38,3 +38,7 @@ Every file imports with no warnings. Sign in at `http://localhost:5173/dev` as *
    - **Answer sheets (PDF)** in Results downloads every student's sheet in one file.
 
 The AI checker needs `GEMINI_API_KEY` in `backend/.env`. The free tier allows only a few checks a minute; when it's busy, students see "try again in about N seconds". For a real exam with many students, use a paid key.
+
+## Demo exams
+
+Students can try a demo external and a demo viva from their dashboard, at `/demo/external` and `/demo/viva`. Nothing in them is saved.

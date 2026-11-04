@@ -9,6 +9,7 @@ export const QUESTION_TYPES = {
 // Languages a code question can be answered in; "any" lets the student pick.
 export const LANGUAGES = {
   sql: "SQL",
+  plsql: "PL/SQL",
   python: "Python",
   c: "C",
   cpp: "C++",
@@ -20,10 +21,71 @@ export const LANGUAGES = {
 
 export const languageLabel = (language) => (language === "any" ? "Any language" : LANGUAGES[language] || language);
 
-// Code questions keep up to 2 public tests (shown with the question) and up to
-// 10 private ones (shown once a student's code fails them), public first.
-export const MAX_PUBLIC_TESTS = 2;
+// Code questions keep up to 10 public tests (shown with the question, and
+// checked first) and up to 10 private ones (checked only once every public test
+// passes, and shown when a student's code fails them), public first.
+export const MAX_PUBLIC_TESTS = 10;
 export const MAX_PRIVATE_TESTS = 10;
+
+/**
+ * How one test case went in an AI check: "passed", "failed", "skipped" (a
+ * private test that waited for the public ones to pass) or "none" (not checked).
+ */
+export function testOutcome(run, test) {
+  const outcome = (run?.tests || []).find((t) => t.id === test.id);
+  if (!outcome) return "none";
+  if (outcome.executes) return "passed";
+  return outcome.skipped ? "skipped" : "failed";
+}
+
+// A part number at the start of a question: "I. …", "II (a). …", "IV: …".
+const PART_NUMBER = /^\s*([IVX]{1,4})\s*(?:\(([a-z])\)\s*[.:)]?|[.:)])/;
+
+/** A question's part number, if its text starts with one: { label: "II (a)", part: "II", sub: "a" }. */
+export function questionLabel(text = "") {
+  const match = String(text).match(PART_NUMBER);
+  if (!match) return null;
+  return { label: match[2] ? `${match[1]} (${match[2]})` : match[1], part: match[1], sub: match[2] || "" };
+}
+
+/**
+ * Short names for a paper's questions, ["I", "II (a)", …], when every one
+ * starts with a part number. Otherwise null, and they keep plain numbers.
+ */
+export function paperLabels(texts) {
+  const labels = texts.map((text) => questionLabel(text)?.label);
+  return labels.length > 0 && labels.every(Boolean) ? labels : null;
+}
+
+/**
+ * Splits a paper's items into runs of one part: II (a) to II (e) become one
+ * group with part "II"; anything else is a group of its own with part null.
+ */
+export function partGroups(items, textOf = (item) => item.text) {
+  const groups = [];
+  for (const item of items) {
+    const label = questionLabel(textOf(item));
+    const last = groups[groups.length - 1];
+    if (label?.sub && last?.part === label.part) last.items.push(item);
+    else groups.push({ part: label?.sub ? label.part : null, items: [item] });
+  }
+  return groups;
+}
+
+/**
+ * Parts that repeat the same text after their first paragraph (the schema of
+ * II (a) to II (e)) can show it once: returns that shared text and each part's
+ * own first paragraph. Parts that don't share it keep their whole text.
+ */
+export function splitShared(texts) {
+  const split = texts.map((text) => {
+    const at = text.indexOf("\n\n");
+    return at < 0 ? [text, ""] : [text.slice(0, at), text.slice(at + 2)];
+  });
+  const shared = split[0]?.[1] || "";
+  if (texts.length < 2 || !shared.trim() || !split.every(([, rest]) => rest === shared)) return { shared: "", own: texts };
+  return { shared, own: split.map(([first]) => first) };
+}
 
 /** Names each test the way students see it: "Public test 1", "Private test 2". */
 export function testLabels(tests = []) {

@@ -93,7 +93,7 @@ func gradeWithAI(id primitive.ObjectID) {
 		if run, ok := att.Runs[qid]; ok && run.CodeHash == hash {
 			continue
 		}
-		verdict, err := checkWithAI(ctx, q, language, answer.Code, exam.Context)
+		verdict, err := checkWithAI(ctx, q, language, answer.Code, contextFor(exam, att.SetNumber, q))
 		if err != nil {
 			log.Printf("grader: %s question %s: %v", id.Hex(), qid, err)
 			failed = true

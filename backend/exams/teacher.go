@@ -20,7 +20,7 @@ var defaultInstructions = map[string]string{
 	TypeExternal: "Write each answer in the editor; it saves automatically. Press Run to check it against every test case: the public ones first, then the private ones, and how correct your answer is. If your code fails a private test, you'll see what it was. It's a dry run by AI, so small syntax slips don't count against you. Stay on this tab in fullscreen until you submit.",
 }
 
-var defaultPerSet = map[string]int{TypeViva: 10, TypeInternal: 3, TypeExternal: 3}
+var defaultPerSet = map[string]int{TypeViva: 10, TypeInternal: 3, TypeExternal: 5}
 
 type attemptStats struct {
 	Started    int64 `json:"started"`
@@ -38,6 +38,8 @@ type readinessCheck struct {
 func readiness(e *Exam) []readinessCheck {
 	setDetail := "Generated from the blueprint"
 	switch {
+	case len(e.Sets) > 0 && e.Blueprint.Custom:
+		setDetail = fmt.Sprintf("%d of your own sets", len(e.Sets))
 	case len(e.Sets) > 0:
 		setDetail = fmt.Sprintf("%d set(s) of %d questions", len(e.Sets), e.Blueprint.PerSet)
 	case len(e.Report.Errors) > 0:
@@ -477,6 +479,10 @@ func truncateRunes(s string, n int) string {
 func addQuestions(c *gin.Context) {
 	var req struct {
 		Questions []Question `json:"questions"`
+		// From a sheet with the teacher's own sets: switch the exam to them, and
+		// keep each set's schema and data.
+		CustomSets  bool         `json:"custom_sets"`
+		SetContexts []SetContext `json:"set_contexts"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || len(req.Questions) == 0 {
 		respondErr(c, newError(http.StatusBadRequest, "Send at least one question."))
@@ -505,6 +511,36 @@ func addQuestions(c *gin.Context) {
 		if len(e.Questions)+len(cleaned) > maxQuestions {
 			return nil, newError(http.StatusBadRequest, "An exam can hold at most %d questions.", maxQuestions)
 		}
+		// An empty exam takes the kind of sets the new questions come with.
+		if len(e.Questions) == 0 {
+			e.Blueprint.Custom = req.CustomSets || (e.Blueprint.Custom && allHaveSets(cleaned))
+			if !e.Blueprint.Custom {
+				e.Blueprint.SetContexts = nil
+				if e.Blueprint.PerSet < 1 {
+					e.Blueprint.PerSet = defaultPerSet[e.Type]
+				}
+			}
+		}
+		if req.CustomSets && !e.Blueprint.Custom {
+			for _, q := range e.Questions {
+				if q.Set <= 0 {
+					return nil, newError(http.StatusBadRequest, "This exam already has questions without a set number. Delete them first, or import a sheet without a set column.")
+				}
+			}
+			e.Blueprint.Custom = true
+		}
+		if e.Blueprint.Custom {
+			for i, q := range cleaned {
+				if q.Set <= 0 {
+					return nil, newError(http.StatusBadRequest, "Question %d has no set number. This exam uses your own sets, so every question needs one.", i+1)
+				}
+			}
+			merged, err := mergeSetContexts(e.Blueprint.SetContexts, req.SetContexts)
+			if err != nil {
+				return nil, newError(http.StatusBadRequest, "%s", err.Error())
+			}
+			e.Blueprint.SetContexts = merged
+		}
 		e.Questions = append(e.Questions, cleaned...)
 		regenerateSets(e)
 		return contentFields(e), nil
@@ -514,6 +550,15 @@ func addQuestions(c *gin.Context) {
 		return
 	}
 	respondBundle(ctx, c, exam, gin.H{"added": len(cleaned)})
+}
+
+func allHaveSets(questions []Question) bool {
+	for _, q := range questions {
+		if q.Set <= 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func updateQuestion(c *gin.Context) {
@@ -536,6 +581,9 @@ func updateQuestion(c *gin.Context) {
 		clean, err := cleanQuestion(req.Question, e.Type)
 		if err != nil {
 			return nil, newError(http.StatusBadRequest, "%s", err.Error())
+		}
+		if e.Blueprint.Custom && clean.Set <= 0 {
+			return nil, newError(http.StatusBadRequest, "Pick the set this question belongs to.")
 		}
 		for i := range e.Questions {
 			if e.Questions[i].ID == questionID {
@@ -607,7 +655,12 @@ func previewBlueprint(c *gin.Context) {
 		respondErr(c, err)
 		return
 	}
-	_, report := GenerateSets(exam.Questions, bp, newRNG())
+	var report GenReport
+	if bp.Custom {
+		_, report = CustomSets(exam.Questions, exam.Blueprint.SetContexts)
+	} else {
+		_, report = GenerateSets(exam.Questions, bp, newRNG())
+	}
 	c.JSON(http.StatusOK, gin.H{"report": report})
 }
 
@@ -629,6 +682,15 @@ func saveBlueprint(c *gin.Context) {
 	exam, err := modifyExam(ctx, c, func(e *Exam) (bson.M, error) {
 		if e.ContentLocked {
 			return nil, errLocked
+		}
+		if bp.Custom && !allHaveSets(e.Questions) {
+			return nil, newError(http.StatusBadRequest, "Some questions have no set number. Give every question a set before using your own sets.")
+		}
+		if bp.SetContexts == nil {
+			bp.SetContexts = e.Blueprint.SetContexts // switching back and forth keeps each set's schema
+		}
+		if bp.PerSet < 1 {
+			bp.PerSet = defaultPerSet[e.Type]
 		}
 		e.Blueprint = bp
 		regenerateSets(e)
@@ -707,7 +769,7 @@ func addStudents(c *gin.Context) {
 		e.AllowedStudents = append(e.AllowedStudents, fresh...)
 		sort.Strings(e.AllowedStudents)
 		if !e.ContentLocked {
-			e.Assignments = AssignSets(e.AllowedStudents, len(e.Sets))
+			e.Assignments = dealSets(e.AllowedStudents, e.Sets)
 		} else {
 			// Students already writing keep their sets; newcomers join the emptiest set.
 			for _, email := range fresh {
@@ -781,7 +843,7 @@ func removeStudents(c *gin.Context) {
 		}
 		e.AllowedStudents = remaining
 		if !e.ContentLocked {
-			e.Assignments = AssignSets(e.AllowedStudents, len(e.Sets))
+			e.Assignments = dealSets(e.AllowedStudents, e.Sets)
 		} else {
 			stillAllowed := map[string]bool{}
 			for _, email := range remaining {

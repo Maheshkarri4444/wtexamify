@@ -18,6 +18,7 @@ type PaperQuestion struct {
 	Language    string        `json:"language,omitempty"`
 	StarterCode string        `json:"starter_code,omitempty"`
 	Tests       []PaperTest   `json:"tests,omitempty"`
+	Context     string        `json:"context,omitempty"` // this question's own tables and data
 }
 
 type PaperTest struct {
@@ -44,14 +45,15 @@ func findSet(e *Exam, number int) *QuestionSet {
 }
 
 // buildPaper lays out one student's copy of a set: question order and option
-// order are shuffled per student when the exam's settings ask for it.
+// order are shuffled per student when the exam's settings ask for it. The
+// teacher's own sets keep the order of their sheet (I before II, say).
 func buildPaper(e *Exam, setNumber int, rng *rand.Rand) ([]string, map[string][]int) {
 	set := findSet(e, setNumber)
 	if set == nil {
 		return []string{}, map[string][]int{}
 	}
 	ids := append([]string(nil), set.QuestionIDs...)
-	if e.Settings.ShuffleQuestions {
+	if e.Settings.ShuffleQuestions && !e.Blueprint.Custom {
 		rng.Shuffle(len(ids), func(i, j int) { ids[i], ids[j] = ids[j], ids[i] })
 	}
 	byID := questionMap(e)
@@ -102,6 +104,7 @@ func paperQuestions(e *Exam, att *Attempt) []PaperQuestion {
 				pq.Options = append(pq.Options, PaperOption{ID: idx, Text: q.Options[idx]})
 			}
 		}
+		pq.Context = q.Context
 		switch q.Type {
 		case QDescriptive:
 			pq.Difficulty = q.Difficulty
