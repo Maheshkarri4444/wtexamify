@@ -1,5 +1,3 @@
-export const STUDENT_DOMAIN = "@rguktn.ac.in";
-
 export const QUESTION_TYPES = {
   mcq_single: { label: "Single correct", short: "Single" },
   mcq_multi: { label: "Multiple correct", short: "Multiple" },
@@ -21,6 +19,18 @@ export const LANGUAGES = {
 };
 
 export const languageLabel = (language) => (language === "any" ? "Any language" : LANGUAGES[language] || language);
+
+// Code questions keep up to 2 public tests (shown with the question) and up to
+// 10 private ones (shown once a student's code fails them), public first.
+export const MAX_PUBLIC_TESTS = 2;
+export const MAX_PRIVATE_TESTS = 10;
+
+/** Names each test the way students see it: "Public test 1", "Private test 2". */
+export function testLabels(tests = []) {
+  let shown = 0;
+  let hidden = 0;
+  return tests.map((t) => (t.hidden ? `Private test ${++hidden}` : `Public test ${++shown}`));
+}
 
 export const DIFFICULTY = {
   easy: { label: "Easy", tone: "success" },

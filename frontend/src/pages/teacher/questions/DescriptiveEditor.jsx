@@ -58,7 +58,7 @@ export default function DescriptiveEditor({ open, onClose, question, onSave, sav
       }
     >
       <div className="space-y-5 pt-1">
-        <Field label="Question">
+        <Field label="Question" info="The question as students will read it on their paper.">
           {(id) => (
             <Textarea
               id={id}
@@ -75,7 +75,7 @@ export default function DescriptiveEditor({ open, onClose, question, onSave, sav
           )}
         </Field>
         <div className="flex flex-wrap items-end gap-6">
-          <Field label="Difficulty">
+          <Field label="Difficulty" info="Used when the blueprint balances sets by difficulty.">
             <Segmented
               value={q.difficulty}
               onChange={(difficulty) => setQ({ ...q, difficulty })}
@@ -87,7 +87,7 @@ export default function DescriptiveEditor({ open, onClose, question, onSave, sav
               ]}
             />
           </Field>
-          <Field label="Marks" hint="Shown on the paper.">
+          <Field label="Marks" info="Printed on the paper. Internals aren't marked in Examify." hint="Shown on the paper.">
             <Stepper value={q.marks} onChange={(marks) => setQ({ ...q, marks })} min={1} max={100} label="Marks" />
           </Field>
         </div>

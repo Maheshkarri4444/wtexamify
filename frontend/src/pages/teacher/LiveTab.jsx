@@ -29,7 +29,7 @@ import { Card, CardHeader } from "../../components/ui/Card";
 import { Meter, StatTile } from "../../components/ui/Data";
 import { Callout, EmptyState, PageLoader } from "../../components/ui/Feedback";
 import { Input, Segmented } from "../../components/ui/Form";
-import { ConfirmModal, Menu, Tooltip } from "../../components/ui/Overlay";
+import { ConfirmModal, InfoTip, Menu, Tooltip } from "../../components/ui/Overlay";
 import { cn } from "../../lib/cn";
 import { teacherApi } from "../../lib/api";
 import { formatClock, pluralize, timeAgo } from "../../lib/format";
@@ -147,11 +147,11 @@ export default function LiveTab() {
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <StatTile label="Allowed" value={summary.allowed || 0} icon={Users} tone="neutral" />
-        <StatTile label="Not started" value={summary.not_started || 0} icon={CircleDashed} tone="neutral" />
-        <StatTile label="Writing" value={summary.writing || 0} icon={PencilLine} tone="info" hint={summary.offline ? `${summary.offline} offline` : "All online"} />
-        <StatTile label="Locked" value={summary.locked || 0} icon={ShieldAlert} tone="danger" hint={summary.locked ? "Waiting for you" : "No one"} />
-        <StatTile label="Submitted" value={summary.submitted || 0} icon={CheckCircle2} tone="success" />
+        <StatTile label="Allowed" info="Everyone on this exam's student list." value={summary.allowed || 0} icon={Users} tone="neutral" />
+        <StatTile label="Not started" info="On the list, but hasn't opened the paper yet." value={summary.not_started || 0} icon={CircleDashed} tone="neutral" />
+        <StatTile label="Writing" info="Writing right now. Offline means their browser hasn't checked in for a while; what they saved so far is safe." value={summary.writing || 0} icon={PencilLine} tone="info" hint={summary.offline ? `${summary.offline} offline` : "All online"} />
+        <StatTile label="Locked" info="Papers locked because the student left the tab, left fullscreen or stopped sharing. Unlock them from their row, or type the copy code on their laptop." value={summary.locked || 0} icon={ShieldAlert} tone="danger" hint={summary.locked ? "Waiting for you" : "No one"} />
+        <StatTile label="Submitted" info="Handed in by the student, or automatically when time ran out or after too many violations." value={summary.submitted || 0} icon={CheckCircle2} tone="success" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
@@ -170,6 +170,7 @@ export default function LiveTab() {
                 { value: "submitted", label: "Submitted", count: counts.submitted },
               ]}
             />
+            <InfoTip text="Everyone on the list and where they are now. Hover a status to see what it means. A row's menu lets you unlock a student, add time, give a new set or submit for them." />
             <div className="relative ml-auto w-full sm:w-56">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
               <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Roll number or name" className="h-9 pl-9" />
@@ -280,7 +281,7 @@ export default function LiveTab() {
 
         <div className="space-y-6">
           <Card>
-            <CardHeader icon={KeyRound} title="Teacher codes" />
+            <CardHeader icon={KeyRound} title="Teacher codes" info="The copy code unlocks a student whose paper locked. The refresh code gives a student a new set and clears their answers. Type them on the student's laptop yourself; don't read them out." />
             <div className="p-5">
               <TeacherCodes settings={exam.settings} />
             </div>
@@ -289,6 +290,7 @@ export default function LiveTab() {
             <div className="flex items-center gap-2 text-sm font-semibold text-ink">
               <Clock3 className="h-4 w-4 text-muted" />
               Add time for everyone writing
+              <InfoTip text="Gives every student who is writing right now extra minutes, for example after a power cut. Students who haven't started already get the full time." />
             </div>
             <p className="mt-1 text-[13px] text-muted">For a power cut or a late start. Students who haven't started get the full time anyway.</p>
             <div className="mt-3 flex gap-2">
@@ -309,7 +311,7 @@ export default function LiveTab() {
         </div>
       </div>
 
-      <AttemptDrawer examId={exam.id} examType={exam.type} attemptId={viewing} onClose={() => setViewing(null)} />
+      <AttemptDrawer examId={exam.id} examType={exam.type} examTitle={exam.title} attemptId={viewing} onClose={() => setViewing(null)} />
       <ConfirmModal
         open={Boolean(confirmSubmit)}
         onClose={() => setConfirmSubmit(null)}

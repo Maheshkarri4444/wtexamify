@@ -8,7 +8,7 @@ import { Card, CardHeader } from "../../../components/ui/Card";
 import { Checkbox, Textarea } from "../../../components/ui/Form";
 import { cn } from "../../../lib/cn";
 import { teacherApi } from "../../../lib/api";
-import { languageLabel, pluralize } from "../../../lib/format";
+import { languageLabel, pluralize, testLabels } from "../../../lib/format";
 
 function CardShell({ number, selected, onSelect, onEdit, onDelete, locked, badges, children }) {
   return (
@@ -49,7 +49,9 @@ export function DescriptiveCard({ question, ...props }) {
 
 export function CodeCard({ question, ...props }) {
   const [showAnswer, setShowAnswer] = useState(false);
-  const hidden = question.test_cases.filter((t) => t.hidden).length;
+  const tests = question.test_cases;
+  const hidden = tests.filter((t) => t.hidden).length;
+  const labels = testLabels(tests);
   return (
     <CardShell
       {...props}
@@ -58,24 +60,23 @@ export function CodeCard({ question, ...props }) {
           <Badge tone="primary">{languageLabel(question.language)}</Badge>
           <DifficultyBadge difficulty={question.difficulty} />
           <Badge>{pluralize(question.marks, "mark")}</Badge>
-          <Badge tone={question.test_cases.length ? "info" : "neutral"}>
-            {question.test_cases.length ? pluralize(question.test_cases.length, "test case") : "No test cases"}
-            {hidden > 0 && ` · ${hidden} hidden`}
+          <Badge tone={tests.length ? "info" : "neutral"}>
+            {tests.length ? `${tests.length - hidden} public · ${hidden} private` : "No test cases"}
           </Badge>
         </>
       }
     >
       <QuestionText text={question.text} className="text-[15px] leading-relaxed text-ink" />
-      {question.test_cases.length > 0 && (
+      {tests.length > 0 && (
         <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
-          {question.test_cases.map((test, i) => (
+          {tests.map((test, i) => (
             <div key={test.id} className="flex items-start gap-2 rounded-lg bg-subtle/70 px-2.5 py-1.5 text-[12.5px]">
-              <span className="shrink-0 font-semibold text-muted">T{i + 1}</span>
+              <span className="shrink-0 font-semibold text-muted">{labels[i].replace(" test", "")}</span>
               <span className="min-w-0 flex-1 truncate font-mono text-ink-2" title={`${test.input} → ${test.output}`}>
                 {test.input ? `${test.input.split("\n")[0]} → ` : ""}
                 {test.output.split("\n").join(", ")}
               </span>
-              {test.hidden && <EyeOff className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" aria-label="Hidden from students" />}
+              {test.hidden && <EyeOff className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" aria-label="Private: shown to a student only after their code fails it" />}
             </div>
           ))}
         </div>
@@ -115,7 +116,7 @@ export function SharedContextCard({ exam, setBundle }) {
     <Card>
       <CardHeader
         icon={Database}
-        title="Shared schema and data"
+        title="Shared schema and data" info="Tables, sample rows or notes that every code question can use. Students see it beside each question, and the AI gets it with every check. It locks once students start."
         description="Optional. Table definitions, sample rows or notes every question can refer to. Students see it next to the questions, and the AI uses it when checking their code."
         actions={
           <Button size="sm" variant="ghost" icon={ChevronDown} onClick={() => setOpen((v) => !v)} className={cn(open && "[&>svg]:rotate-180")}>

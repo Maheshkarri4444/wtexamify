@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { ArrowDownUp, BarChart3, ChevronDown, ClipboardList, Download, Flag, Hourglass, ListOrdered, RefreshCw, Search, Users } from "lucide-react";
+import toast from "react-hot-toast";
+import { ArrowDownUp, BarChart3, ChevronDown, ClipboardList, Download, FileText, Flag, Hourglass, ListOrdered, RefreshCw, Search, Users } from "lucide-react";
 import { DifficultyBadge, QuestionText, QuestionTypeBadge } from "../../components/exam/ExamBits";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -68,6 +69,32 @@ function SearchBar({ query, setQuery, children }) {
   );
 }
 
+/** Every student's answer sheet (or, for an internal, question paper) in one PDF. */
+function AnswerSheetsButton({ exam, size = "md" }) {
+  const [busy, setBusy] = useState(false);
+  const download = async () => {
+    setBusy(true);
+    try {
+      const [{ downloadAnswerSheets }, data] = await Promise.all([import("../../lib/answerSheetsPdf"), teacherApi.answerSheets(exam.id)]);
+      if (!data.sheets.length) {
+        toast.error("No student has started yet, so there are no answer sheets.");
+        return;
+      }
+      downloadAnswerSheets(data.exam, data.sheets);
+      toast.success(`Downloaded ${pluralize(data.sheets.length, exam.type === "internal" ? "question paper" : "answer sheet")}.`);
+    } catch (error) {
+      toast.error(error.message || "Couldn't make the PDF. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Button variant="secondary" size={size} icon={FileText} loading={busy} onClick={download}>
+      {exam.type === "internal" ? "Question papers (PDF)" : "Answer sheets (PDF)"}
+    </Button>
+  );
+}
+
 const matches = (row, query) => !query || row.email.includes(query) || row.roll.toLowerCase().includes(query) || row.name?.toLowerCase().includes(query);
 
 const StudentCell = ({ row }) => (
@@ -99,16 +126,17 @@ function Attendance({ exam, data, onOpen }) {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatTile label="Opened the paper" value={summary.attempts} hint={`of ${pluralize(summary.allowed, "student")}`} icon={Users} tone="primary" />
-        <StatTile label="Finished" value={summary.submitted} />
-        <StatTile label="Still writing" value={writing} />
-        <StatTile label="Haven't started" value={Math.max(0, summary.allowed - summary.attempts)} />
+        <StatTile label="Opened the paper" info="Students who opened their question paper, out of everyone on the list." value={summary.attempts} hint={`of ${pluralize(summary.allowed, "student")}`} icon={Users} tone="primary" />
+        <StatTile label="Finished" info="Students who closed the paper, or whose time ran out." value={summary.submitted} />
+        <StatTile label="Still writing" info="Students who have the paper open right now." value={writing} />
+        <StatTile label="Haven't started" info="On the list, but never opened the paper." value={Math.max(0, summary.allowed - summary.attempts)} />
       </div>
       <Callout title="Internals aren't marked in Examify">
         Students see the questions here and write the programs in their lab setup. This sheet shows who opened the paper, which set they got and when they finished.
       </Callout>
       <Card>
         <SearchBar query={query} setQuery={setQuery}>
+          <AnswerSheetsButton exam={exam} size="sm" />
           <Button size="sm" variant="secondary" icon={Download} onClick={() => exportResults(exam.title, data.rows, [], exam.type)}>
             Export to Excel
           </Button>
@@ -196,15 +224,15 @@ function MarkedResults({ exam, data, onOpen }) {
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <StatTile label="Submitted" value={summary.submitted} hint={`of ${pluralize(summary.allowed, "student")}`} icon={Users} tone="primary" />
-        <StatTile label="Average" value={`${formatNumber(summary.average)}%`} />
-        <StatTile label="Median" value={`${formatNumber(summary.median)}%`} />
-        <StatTile label="Highest" value={`${formatNumber(summary.highest)}%`} />
-        <StatTile label="Lowest" value={`${formatNumber(summary.lowest)}%`} />
+        <StatTile label="Submitted" info="Answer sheets handed in, out of everyone on the student list." value={summary.submitted} hint={`of ${pluralize(summary.allowed, "student")}`} icon={Users} tone="primary" />
+        <StatTile label="Average" info="The mean percentage of everyone who submitted." value={`${formatNumber(summary.average)}%`} />
+        <StatTile label="Median" info="The middle score: half the class scored at or above it. A few very high or very low scores move it less than the average." value={`${formatNumber(summary.median)}%`} />
+        <StatTile label="Highest" info="The best percentage among the submitted answer sheets." value={`${formatNumber(summary.highest)}%`} />
+        <StatTile label="Lowest" info="The lowest percentage among the submitted answer sheets." value={`${formatNumber(summary.lowest)}%`} />
       </div>
 
       <Card>
-        <CardHeader icon={BarChart3} title="Score distribution" description="Students per 10% band. Hover a column for the count." />
+        <CardHeader icon={BarChart3} title="Score distribution" info="How many students scored in each 10% band, for example 70 to 79%." description="Students per 10% band. Hover a column for the count." />
         <div className="px-5 pb-5 pt-6">
           <Histogram
             bins={summary.distribution}
@@ -223,16 +251,19 @@ function MarkedResults({ exam, data, onOpen }) {
             { value: "questions", label: "Questions", icon: ListOrdered, count: shownQuestions.length },
           ]}
         />
-        <Button variant="secondary" icon={Download} onClick={() => exportResults(exam.title, data.rows, data.questions, exam.type)}>
-          Export to Excel
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <AnswerSheetsButton exam={exam} />
+          <Button variant="secondary" icon={Download} onClick={() => exportResults(exam.title, data.rows, data.questions, exam.type)}>
+            Export to Excel
+          </Button>
+        </div>
       </div>
 
       {view === "students" ? (
         <Card>
           <SearchBar query={query} setQuery={setQuery}>
             <Button size="sm" variant="ghost" icon={ArrowDownUp} onClick={() => setSort(sort === "roll" ? "score" : "roll")}>
-              {sort === "roll" ? "Sorted by roll number" : "Sorted by score"}
+              {sort === "roll" ? "Sorted by email" : "Sorted by score"}
             </Button>
           </SearchBar>
           <div className="overflow-x-auto">
@@ -292,7 +323,7 @@ function MarkedResults({ exam, data, onOpen }) {
         <Card>
           <CardHeader
             icon={ListOrdered}
-            title="How each question did"
+            title="How each question did" info="How every question went across the class. Use it to spot confusing questions, or topics to revise."
             description={
               external
                 ? "The average AI correctness of everyone's code. Under 30% is flagged: the question may be unclear, or the topic needs revising."
@@ -397,7 +428,7 @@ export default function ResultsTab() {
   return (
     <>
       {exam.type === "internal" ? <Attendance exam={exam} data={data} onOpen={setViewing} /> : <MarkedResults exam={exam} data={data} onOpen={setViewing} />}
-      <AttemptDrawer examId={exam.id} examType={exam.type} attemptId={viewing} onClose={() => setViewing(null)} onChanged={load} />
+      <AttemptDrawer examId={exam.id} examType={exam.type} examTitle={exam.title} attemptId={viewing} onClose={() => setViewing(null)} onChanged={load} />
     </>
   );
 }

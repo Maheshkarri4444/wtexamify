@@ -81,10 +81,10 @@ export default function CreateExamModal({ open, onClose }) {
         </div>
       ) : (
         <form onSubmit={create} className="space-y-5 pt-1">
-          <Field label="Exam name">
+          <Field label="Exam name" info="Shown to students. Include the subject and batch so it's easy to find.">
             {(id) => <Input id={id} autoFocus value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} placeholder={PLACEHOLDERS[type]} />}
           </Field>
-          <Field label="Duration" hint="Each student gets this long from the moment they start.">
+          <Field label="Duration" info="How long each student has, counted from the moment they press Start." hint="Each student gets this long from the moment they start.">
             <div className="flex flex-wrap items-center gap-2">
               {DURATIONS[type].map((minutes) => (
                 <button

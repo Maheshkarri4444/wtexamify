@@ -44,6 +44,7 @@ func RegisterRoutes(r *gin.Engine) {
 		teacher.GET("/exams/:id/monitor", monitor)
 		teacher.POST("/exams/:id/extend", extendAll)
 		teacher.GET("/exams/:id/results", results)
+		teacher.GET("/exams/:id/answer-sheets", answerSheets)
 		teacher.GET("/exams/:id/attempts/:aid", attemptDetail)
 		teacher.POST("/exams/:id/attempts/:aid/action", attemptAction)
 		teacher.POST("/exams/:id/attempts/:aid/marks", setMarks)

@@ -183,7 +183,7 @@ export default function QuestionEditor({ open, onClose, question, onSave, saving
           ]}
         />
 
-        <Field label="Question" hint={q.type === "fill" ? "Type ____ (four underscores) where the blank goes." : undefined}>
+        <Field label="Question" info="The question students read. For fill in the blank, type ____ (four underscores) where the blank goes." hint={q.type === "fill" ? "Type ____ (four underscores) where the blank goes." : undefined}>
           {(id) => (
             <Textarea
               id={id}
@@ -198,7 +198,7 @@ export default function QuestionEditor({ open, onClose, question, onSave, saving
         </Field>
 
         {isMcq ? (
-          <Field label="Options" aside={<span className="text-xs text-muted">{q.type === "mcq_single" ? "Click the circle next to the right answer" : "Tick every correct option"}</span>}>
+          <Field label="Options" info="Up to eight options. Mark the correct ones: exactly one for single-correct, one or more for multiple-correct." aside={<span className="text-xs text-muted">{q.type === "mcq_single" ? "Click the circle next to the right answer" : "Tick every correct option"}</span>}>
             <div className="space-y-2">
               {q.options.map((option, i) => {
                 const correct = q.correct.includes(i);
@@ -242,13 +242,13 @@ export default function QuestionEditor({ open, onClose, question, onSave, saving
             </div>
           </Field>
         ) : (
-          <Field label="Accepted answers" hint="Marking ignores capital letters and spaces, so “Program Counter” matches “programcounter”. Add every other spelling you accept.">
+          <Field label="Accepted answers" info="Any of these counts as correct. Capital letters and spaces are ignored when marking." hint="Marking ignores capital letters and spaces, so “Program Counter” matches “programcounter”. Add every other spelling you accept.">
             <AnswerChips answers={q.answers} onChange={(answers) => update({ answers })} />
           </Field>
         )}
 
         <div className="flex flex-wrap items-end gap-6">
-          <Field label="Difficulty">
+          <Field label="Difficulty" info="Used when the blueprint balances sets by difficulty. A question without one counts as medium.">
             <Segmented
               value={q.difficulty}
               onChange={(difficulty) => update({ difficulty })}
@@ -260,7 +260,7 @@ export default function QuestionEditor({ open, onClose, question, onSave, saving
               ]}
             />
           </Field>
-          <Field label="Marks">
+          <Field label="Marks" info="What a fully correct answer is worth.">
             <Stepper value={q.marks} onChange={(marks) => update({ marks })} min={1} max={100} label="Marks" />
           </Field>
         </div>

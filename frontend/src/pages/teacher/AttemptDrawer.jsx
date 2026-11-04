@@ -9,6 +9,7 @@ import {
   Clipboard,
   Clock3,
   EyeOff,
+  FileText,
   Hourglass,
   KeyRound,
   Lock,
@@ -28,10 +29,10 @@ import { Button, IconButton } from "../../components/ui/Button";
 import { Meter } from "../../components/ui/Data";
 import { PageLoader } from "../../components/ui/Feedback";
 import { Input, Segmented } from "../../components/ui/Form";
-import { Drawer } from "../../components/ui/Overlay";
+import { Drawer, InfoTip } from "../../components/ui/Overlay";
 import { cn } from "../../lib/cn";
 import { teacherApi } from "../../lib/api";
-import { SUBMIT_REASONS, formatNumber, formatTime, languageLabel, letter, scoreTone, timeAgo } from "../../lib/format";
+import { SUBMIT_REASONS, formatNumber, formatTime, languageLabel, letter, scoreTone, testLabels, timeAgo } from "../../lib/format";
 
 const RESULT = {
   correct: { label: "Correct", tone: "success", icon: CheckCircle2 },
@@ -121,6 +122,7 @@ function CodeAnswer({ item }) {
   const [showSolution, setShowSolution] = useState(false);
   const run = item.run;
   const tests = item.test_cases || [];
+  const labels = testLabels(tests);
   return (
     <div className="mt-3 space-y-3">
       <div>
@@ -151,13 +153,13 @@ function CodeAnswer({ item }) {
                 return (
                   <li key={test.id} className="flex items-start gap-2.5 rounded-lg bg-subtle/60 px-3 py-2 text-[12.5px]">
                     {outcome?.executes ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" /> : <X className="mt-0.5 h-4 w-4 shrink-0 text-danger" />}
-                    <span className="w-14 shrink-0 font-semibold text-ink">Test {i + 1}</span>
+                    <span className="w-28 shrink-0 font-semibold text-ink">{labels[i]}</span>
                     <span className="min-w-0 flex-1 truncate font-mono text-ink-2" title={`${test.input} → ${test.output}`}>
                       {test.input ? `${test.input.split("\n")[0]} → ` : ""}
                       {test.output.split("\n").join(", ")}
                     </span>
-                    {test.hidden && <EyeOff className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" aria-label="Hidden from students" />}
-                    <span className={cn("shrink-0 font-medium", outcome?.executes ? "text-success-text" : "text-danger-text")}>{outcome?.executes ? "Will execute" : "Won't execute"}</span>
+                    {test.hidden && <EyeOff className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" aria-label="Private test" />}
+                    <span className={cn("shrink-0 font-medium", outcome?.executes ? "text-success-text" : "text-danger-text")}>{outcome?.executes ? "Passed" : "Failed"}</span>
                   </li>
                 );
               })}
@@ -236,7 +238,7 @@ function AnswerItem({ item, onSaveMarks }) {
   );
 }
 
-export default function AttemptDrawer({ examId, examType, attemptId, onClose, onChanged }) {
+export default function AttemptDrawer({ examId, examType, examTitle, attemptId, onClose, onChanged }) {
   const [data, setData] = useState(null);
   const [view, setView] = useState("answers");
   const [regrading, setRegrading] = useState(false);
@@ -289,6 +291,16 @@ export default function AttemptDrawer({ examId, examType, attemptId, onClose, on
     }
   };
 
+  const downloadPdf = async () => {
+    try {
+      const { answerSheetFileName, downloadAnswerSheets } = await import("../../lib/answerSheetsPdf");
+      const exam = { title: examTitle || "Exam", type: examType };
+      downloadAnswerSheets(exam, [{ student: data.student, items: data.items }], answerSheetFileName(exam, data.student));
+    } catch {
+      toast.error("Couldn't make the PDF. Try again.");
+    }
+  };
+
   const student = data?.student;
   return (
     <Drawer
@@ -312,11 +324,17 @@ export default function AttemptDrawer({ examId, examType, attemptId, onClose, on
         )
       }
       actions={
-        examType === "external" &&
-        student?.status === "submitted" && (
-          <Button size="sm" variant="secondary" icon={Sparkles} onClick={regrade} loading={regrading}>
-            Re-check with AI
-          </Button>
+        student && (
+          <>
+            {examType === "external" && student.status === "submitted" && (
+              <Button size="sm" variant="secondary" icon={Sparkles} onClick={regrade} loading={regrading}>
+                Re-check with AI
+              </Button>
+            )}
+            <Button size="sm" variant="secondary" icon={FileText} onClick={downloadPdf} title="Download this answer sheet as a PDF">
+              PDF
+            </Button>
+          </>
         )
       }
     >
@@ -339,6 +357,10 @@ export default function AttemptDrawer({ examId, examType, attemptId, onClose, on
             <span className="text-xs text-muted">
               {student.violations} violations · {student.refreshes} refreshes · {student.clipboard_blocks} copy/paste blocked
               {student.runs > 0 && ` · ${student.runs} code checks`}
+              <InfoTip
+                text="Violations: times the paper locked. Refreshes: new sets given with the refresh code. Copy/paste blocked: refused attempts, never counted as cheating. Code checks: times the student pressed Run."
+                className="ml-1.5"
+              />
             </span>
           </div>
           {view === "answers" ? (

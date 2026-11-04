@@ -6,10 +6,10 @@ Every file imports with no warnings. Sign in at `http://localhost:5173/dev` as *
 | --- | --- | --- |
 | `viva-dbms-30-questions.xlsx` | Viva | 30 DBMS questions: 12 easy, 12 medium, 6 hard (16 single-correct, 6 multiple-correct, 8 fill in the blank). |
 | `internal-dbms-9-questions.xlsx` | Internal | 9 DBMS lab questions, 3 per difficulty, 10–20 marks each. |
-| `external-dbms-9-questions.xlsx` | External | 9 DBMS questions, 3 per difficulty: 7 SQL, 1 PHP + MySQL, 1 Python + MySQL. Covers hidden tests, starter code, and a question with no test cases. |
+| `external-dbms-9-questions.xlsx` | External | 9 DBMS questions, 3 per difficulty: 7 SQL, 1 PHP + MySQL, 1 Python + MySQL. Covers public and private tests, starter code, and a question with no test cases. |
 | `external-dbms-schema.sql` | External | The tables and rows the DBMS questions use. Paste it into **Questions → Shared schema and data**. |
 | `external-dsa-6-questions.xlsx` | External | 6 DSA questions: 4 in any language (the student picks), 1 in C, 1 in Java. |
-| `students.xlsx` | Any | The six dev-login students. Import it under **Students**. |
+| `students.xlsx` | Any | The six dev-login students, by email. Import it under **Students**. |
 
 ## Getting exactly 3 sets
 
@@ -31,9 +31,10 @@ Every file imports with no warnings. Sign in at `http://localhost:5173/dev` as *
 3. **External.**
    - Create the external, import the DBMS sheet and paste the schema.
    - Open a question and press **Check my answer with AI**. Your own answer should score close to 100%.
-   - As a student, press **Run** on a question (Ctrl+Enter also works). You get a correctness % and *Will execute / Won't execute* for each test.
+   - As a student, press **Run** on a question (Ctrl+Enter also works). The public test results show first, then the private ones. Any private test the code fails is shown with its input and expected output, followed by a correctness %.
    - Change the code: the result is marked as out of date.
    - Submit without running one question. Its code is checked in the background, and the result screen waits for it.
-   - In **Results**, open the answer sheet. Try **Change marks** and **Re-check with AI**.
+   - In **Results**, open the answer sheet. Try **Change marks**, **Re-check with AI** and **PDF**.
+   - **Answer sheets (PDF)** in Results downloads every student's sheet in one file.
 
 The AI checker needs `GEMINI_API_KEY` in `backend/.env`. The free tier allows only a few checks a minute; when it's busy, students see "try again in about N seconds". For a real exam with many students, use a paid key.

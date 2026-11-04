@@ -136,18 +136,19 @@ func TestCleanQuestion(t *testing.T) {
 	}
 }
 
-func TestNormalizeStudent(t *testing.T) {
+func TestNormalizeEmail(t *testing.T) {
 	for in, want := range map[string]string{
-		"N210368":               "n210368@rguktn.ac.in",
 		" n220147@RGUKTN.ac.in": "n220147@rguktn.ac.in",
 		"Someone@Gmail.com":     "someone@gmail.com",
+		"<cse.hod@college.edu>": "cse.hod@college.edu",
 	} {
-		if got, ok := normalizeStudent(in); !ok || got != want {
-			t.Errorf("normalizeStudent(%q) = %q %v, want %q", in, got, ok, want)
+		if got, ok := normalizeEmail(in); !ok || got != want {
+			t.Errorf("normalizeEmail(%q) = %q %v, want %q", in, got, ok, want)
 		}
 	}
-	for _, bad := range []string{"", "N21036", "hello", "a@b"} {
-		if _, ok := normalizeStudent(bad); ok {
+	// A bare roll number isn't an email: it could belong to more than one address.
+	for _, bad := range []string{"", "N210368", "hello", "a@b"} {
+		if _, ok := normalizeEmail(bad); ok {
 			t.Errorf("%q should be rejected", bad)
 		}
 	}

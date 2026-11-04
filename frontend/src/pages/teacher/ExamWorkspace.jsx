@@ -25,10 +25,11 @@ import { AppShell } from "../../components/layout/AppShell";
 import { StatusBadge, TypeIcon } from "../../components/exam/ExamBits";
 import { Button, IconButton } from "../../components/ui/Button";
 import { Callout, PageLoader } from "../../components/ui/Feedback";
-import { ConfirmModal, Menu } from "../../components/ui/Overlay";
+import { ConfirmModal, InfoTip, Menu } from "../../components/ui/Overlay";
 import { cn } from "../../lib/cn";
 import { teacherApi } from "../../lib/api";
 import { formatMinutes, pluralize } from "../../lib/format";
+import { usePolling } from "../../lib/hooks";
 
 const TABS = [
   { to: "", label: "Overview", icon: LayoutDashboard, end: true },
@@ -76,6 +77,24 @@ const ExamWorkspace = () => {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  // A student can start at any moment while the exam is live. Watch for that, so
+  // no tab keeps offering to change questions, the blueprint or sets.
+  const watchLock = bundle?.exam.status === "live" && !bundle.exam.content_locked;
+  usePolling(
+    async () => {
+      try {
+        const next = await teacherApi.get(id);
+        if (!next.exam.content_locked) return;
+        setBundle(next);
+        toast("A student has started, so questions, blueprint and sets are now locked.", { icon: "🔒", id: "content-locked", duration: 8000 });
+      } catch {
+        // The next check tries again.
+      }
+    },
+    5000,
+    watchLock
+  );
 
   const changeStatus = async (status) => {
     setBusy(true);
@@ -191,6 +210,7 @@ const ExamWorkspace = () => {
             <div className="flex flex-wrap items-center gap-2.5">
               <h1 className="truncate text-2xl font-semibold tracking-tight text-ink">{exam.title}</h1>
               <StatusBadge status={exam.status} />
+              <InfoTip text="Draft: only you can see it. Published: students see it as upcoming. Live: students on the list can start. Ended: everyone still writing was submitted." />
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted">
               <span className="flex items-center gap-1.5">

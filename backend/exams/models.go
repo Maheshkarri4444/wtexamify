@@ -77,7 +77,9 @@ type TestCase struct {
 	ID     string `bson:"id" json:"id"`
 	Input  string `bson:"input" json:"input"`
 	Output string `bson:"output" json:"output"`
-	Hidden bool   `bson:"hidden" json:"hidden"` // students see that it exists and whether it passes, not its contents
+	// Hidden marks a private test: students see whether it passes, and its
+	// contents only once their code fails it (as on LeetCode).
+	Hidden bool `bson:"hidden" json:"hidden"`
 }
 
 // Blueprint describes what every set looks like.

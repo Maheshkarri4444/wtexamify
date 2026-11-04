@@ -128,10 +128,10 @@ const TeacherDashboard = () => {
       />
 
       <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Exams" value={exams ? counts.all : "—"} icon={Layers3} tone="primary" hint={`${counts.draft} draft · ${counts.ended} ended`} />
-        <StatTile label="Live now" value={exams ? counts.live : "—"} icon={Radio} tone="success" hint={counts.live ? "Students are writing" : "Nothing running"} />
-        <StatTile label="Students added" value={exams ? counts.students.toLocaleString("en-IN") : "—"} icon={Users} tone="info" hint="Across all exams" />
-        <StatTile label="Submissions" value={exams ? counts.submitted.toLocaleString("en-IN") : "—"} icon={CheckCheck} tone="neutral" hint="Marked automatically" />
+        <StatTile label="Exams" info="Every exam you've made. Drafts are visible only to you; published exams show up for their students as upcoming." value={exams ? counts.all : "—"} icon={Layers3} tone="primary" hint={`${counts.draft} draft · ${counts.ended} ended`} />
+        <StatTile label="Live now" info="Exams running right now. Students on their lists can start them." value={exams ? counts.live : "—"} icon={Radio} tone="success" hint={counts.live ? "Students are writing" : "Nothing running"} />
+        <StatTile label="Students added" info="Students across all your exam lists. Someone on two lists is counted twice." value={exams ? counts.students.toLocaleString("en-IN") : "—"} icon={Users} tone="info" hint="Across all exams" />
+        <StatTile label="Submissions" info="Answer sheets handed in across all your exams, including ones submitted automatically when time ran out." value={exams ? counts.submitted.toLocaleString("en-IN") : "—"} icon={CheckCheck} tone="neutral" hint="Marked automatically" />
       </div>
 
       <div className="mt-10 flex flex-wrap items-center justify-between gap-3">

@@ -120,6 +120,16 @@ func paperQuestions(e *Exam, att *Attempt) []PaperQuestion {
 	return out
 }
 
+// allTests is every test of a question with its contents, for the review a
+// student gets once the teacher shows answers after the exam.
+func allTests(q Question) []PaperTest {
+	tests := make([]PaperTest, 0, len(q.TestCases))
+	for _, t := range q.TestCases {
+		tests = append(tests, PaperTest{ID: t.ID, Input: t.Input, Output: t.Output, Hidden: t.Hidden})
+	}
+	return tests
+}
+
 // sanitizeAnswers keeps only answers to questions on this paper, with option IDs
 // that exist on it. It returns the cleaned map and how many are answered.
 func sanitizeAnswers(raw map[string]Answer, att *Attempt) (map[string]Answer, int) {

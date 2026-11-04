@@ -9,7 +9,7 @@ import { ProgressRing } from "../../../components/ui/Data";
 import { Spinner } from "../../../components/ui/Feedback";
 import { cn } from "../../../lib/cn";
 import { studentApi } from "../../../lib/api";
-import { SUBMIT_REASONS, formatNumber, languageLabel, letter, scoreTone } from "../../../lib/format";
+import { SUBMIT_REASONS, formatNumber, languageLabel, letter, scoreTone, testLabels } from "../../../lib/format";
 
 const RESULT = {
   correct: { label: "Correct", tone: "success", icon: CheckCircle2 },
@@ -21,6 +21,7 @@ const RESULT = {
 
 function CodeReview({ item }) {
   const tests = item.tests || [];
+  const labels = testLabels(tests);
   return (
     <div className="mt-3 space-y-3">
       <div>
@@ -32,22 +33,25 @@ function CodeReview({ item }) {
         )}
       </div>
       {tests.length > 0 && item.outcomes?.length > 0 && (
-        <ul className="grid gap-1.5 sm:grid-cols-2">
+        <ul className="space-y-1.5">
           {tests.map((test, i) => {
-            const executes = Boolean(item.outcomes.find((t) => t.id === test.id)?.executes);
+            const passed = Boolean(item.outcomes.find((t) => t.id === test.id)?.executes);
             return (
               <li
                 key={test.id}
-                className={cn(
-                  "flex items-center gap-2 rounded-lg border px-3 py-2 text-[13px]",
-                  executes ? "border-success/30 bg-success-soft text-success-text" : "border-danger/25 bg-danger-soft text-danger-text"
-                )}
+                className={cn("rounded-lg border px-3 py-2 text-[13px]", passed ? "border-success/30 bg-success-soft text-success-text" : "border-danger/25 bg-danger-soft text-danger-text")}
               >
-                {executes ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}
-                <span className="font-medium">
-                  {test.hidden ? "Hidden test" : "Test"} {i + 1}
-                </span>
-                <span className="ml-auto text-xs font-medium">{executes ? "Will execute" : "Won't execute"}</span>
+                <div className="flex items-center gap-2">
+                  {passed ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}
+                  <span className="font-medium">{labels[i]}</span>
+                  <span className="ml-auto text-xs font-medium">{passed ? "Passed" : "Failed"}</span>
+                </div>
+                {!passed && (
+                  <div className="mt-1.5 truncate pl-6 font-mono text-xs text-ink-2" title={`${test.input} → ${test.output}`}>
+                    {test.input ? `${test.input.split("\n")[0]} → ` : "Expected: "}
+                    {test.output.split("\n").join(", ")}
+                  </div>
+                )}
               </li>
             );
           })}

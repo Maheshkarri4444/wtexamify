@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import { QUESTION_TYPES, STUDENT_DOMAIN, SUBMIT_REASONS, formatDateTime, languageLabel } from "./format";
+import { MAX_PRIVATE_TESTS, MAX_PUBLIC_TESTS, QUESTION_TYPES, SUBMIT_REASONS, formatDateTime, languageLabel } from "./format";
 
 const COLUMNS = ["type", "question", "option_a", "option_b", "option_c", "option_d", "option_e", "option_f", "answer", "difficulty", "marks"];
 
@@ -45,16 +45,21 @@ const INTERNAL_HELP = [
 
 const EXTERNAL_COLUMNS = [
   "question", "language", "answer", "starter_code", "marks", "difficulty",
-  "test_1_input", "test_1_output", "test_2_input", "test_2_output", "test_3_input", "test_3_output", "hidden_tests",
+  "public_1_input", "public_1_output", "public_2_input", "public_2_output",
+  "private_1_input", "private_1_output", "private_2_input", "private_2_output", "private_3_input", "private_3_output",
 ];
 const EXTERNAL_SAMPLES = [
   [
     "List the names of CSE employees who earn more than 50000, highest salary first.", "sql",
     "SELECT name FROM employees WHERE dept = 'CSE' AND salary > 50000 ORDER BY salary DESC;", "", 10, "easy",
-    "The employees table in the shared schema", "Arjun\nRavi", "The same table plus (5, 'Kiran', 'CSE', 50000)", "Arjun\nRavi", "", "", "2",
+    "The employees table in the shared schema", "Arjun\nRavi", "", "",
+    "The same table plus (5, 'Kiran', 'CSE', 50001)", "Arjun\nRavi\nKiran", "", "", "", "",
   ],
-  ["Read a number n and print the sum of its digits.", "python", "n = input().strip()\nprint(sum(int(d) for d in n))", "n = input()", 10, "medium", "1234", "10", "9", "9", "", "", ""],
-  ["Write a function that returns the factorial of n.", "any", "def fact(n):\n    return 1 if n <= 1 else n * fact(n - 1)", "", 5, "easy", "", "", "", "", "", "", ""],
+  [
+    "Read a number n and print the sum of its digits.", "python", "n = input().strip()\nprint(sum(int(d) for d in n))", "n = input()", 10, "medium",
+    "1234", "10", "9", "9", "1000000", "1", "99999", "45", "", "",
+  ],
+  ["Write a function that returns the factorial of n.", "any", "def fact(n):\n    return 1 if n <= 1 else n * fact(n - 1)", "", 5, "easy", "", "", "", "", "", "", "", "", "", ""],
 ];
 const EXTERNAL_HELP = [
   ["Column", "What to put in it"],
@@ -64,8 +69,8 @@ const EXTERNAL_HELP = [
   ["starter_code", "Optional. Code the editor starts with, such as a function signature."],
   ["marks", "Optional. Defaults to 1. A student who is 80% correct gets 80% of the marks."],
   ["difficulty", "Optional: easy, medium or hard. Needed only if you balance sets by difficulty."],
-  ["test_N_input / test_N_output", "Optional test cases, like LeetCode (add columns up to test_10). Students see each one and whether their code would execute it. Leave all of them empty to have the AI only compare the code with your answer."],
-  ["hidden_tests", "Optional. Test numbers to hide from students, such as 2,3. Students still see whether those pass, but not the input or output."],
+  ["public_1_* / public_2_*", "Up to 2 public test cases (input and expected output). Students see them next to the question."],
+  ["private_N_input / private_N_output", "Up to 10 private test cases (add columns up to private_10_*). Students see only whether they pass; when their code fails one, they're shown that test, like LeetCode. Leave every test column empty to have the AI only compare the code with your answer."],
 ];
 
 function writeTemplate(columns, rows, help, widths, fileName) {
@@ -85,7 +90,7 @@ export function downloadQuestionTemplate(kind = "mixed", examType = "viva") {
     return;
   }
   if (examType === "external") {
-    writeTemplate(EXTERNAL_COLUMNS, EXTERNAL_SAMPLES, EXTERNAL_HELP, [60, 10, 60, 24, 7, 11, 28, 18, 28, 18, 28, 18, 13], "examify-external-template.xlsx");
+    writeTemplate(EXTERNAL_COLUMNS, EXTERNAL_SAMPLES, EXTERNAL_HELP, [60, 10, 60, 24, 7, 11, 28, 18, 28, 18, 28, 18, 28, 18, 28, 18], "examify-external-template.xlsx");
     return;
   }
   const rows = kind === "mixed" ? [...SAMPLES.mcq_single, ...SAMPLES.mcq_multi, ...SAMPLES.fill] : SAMPLES[kind];
@@ -170,12 +175,16 @@ function parseLanguage(raw) {
   return null;
 }
 
-// test_1_input, test 1 output, input_1, output1 ... → { n, part }.
+// public_1_input, private 3 output, public_test_2_expected → { group, n, part }. The
+// older test_1_input / input_1 columns (with hidden_tests) read as group "legacy".
 function testColumn(header) {
-  const match = header.match(/^test_?(\d+)_?(input|output|in|out|expected|expected_output)$/) || header.match(/^(input|output|expected|expected_output)_?(\d+)$/);
+  const parts = "(input|output|in|out|expected|expected_output)";
+  let match = header.match(new RegExp(`^(public|private)_?(?:test_?)?(\\d+)_?${parts}$`));
+  if (match) return { group: match[1], n: Number(match[2]), part: match[3].startsWith("in") ? "input" : "output" };
+  match = header.match(new RegExp(`^test_?(\\d+)_?${parts}$`)) || header.match(new RegExp(`^${parts}_?(\\d+)$`));
   if (!match) return null;
   const [n, part] = /^\d+$/.test(match[1]) ? [Number(match[1]), match[2]] : [Number(match[2]), match[1]];
-  return { n, part: part.startsWith("in") ? "input" : "output" };
+  return { group: "legacy", n, part: part.startsWith("in") ? "input" : "output" };
 }
 
 // Shared row checks for internal and external sheets: header, duplicates, difficulty and marks.
@@ -199,7 +208,10 @@ function parseRowsWith(rows, existingTexts, extraFields, buildQuestion) {
       }
     }
     const test = testColumn(header);
-    if (test) tests[test.n] = { ...tests[test.n], [test.part]: i };
+    if (test) {
+      const key = `${test.group}:${test.n}`;
+      tests[key] = { group: test.group, n: test.n, ...tests[key], [test.part]: i };
+    }
   });
 
   const seen = new Map(existingTexts.map((text) => [normalizeText(text), 0]));
@@ -274,22 +286,31 @@ function parseExternalRows(rows, existingTexts) {
     }
     question.starter_code = raw(col.starter).replace(/\s+$/, "");
     const hiddenRaw = cell(col.hidden).toLowerCase();
-    const hidden = new Set(hiddenRaw === "all" ? Object.keys(tests).map(Number) : hiddenRaw.split(/[\s,;]+/).filter(Boolean).map(Number));
-    question.test_cases = [];
-    for (const n of Object.keys(tests).map(Number).sort((a, b) => a - b)) {
-      const input = raw(tests[n].input).trim();
-      const output = raw(tests[n].output).trim();
+    const legacyHidden = hiddenRaw.split(/[\s,;]+/).filter(Boolean).map(Number);
+    const public_ = [];
+    const private_ = [];
+    const order = { public: 0, private: 1, legacy: 2 };
+    for (const test of Object.values(tests).sort((a, b) => order[a.group] - order[b.group] || a.n - b.n)) {
+      const input = raw(test.input).trim();
+      const output = raw(test.output).trim();
       if (!input && !output) continue;
+      const hidden = test.group === "private" || (test.group === "legacy" && (hiddenRaw === "all" || legacyHidden.includes(test.n)));
+      const name = test.group === "legacy" ? `Test ${test.n}` : `${test.group === "public" ? "Public" : "Private"} test ${test.n}`;
       if (!output) {
-        error(`Test ${n} has an input but no expected output.`);
+        error(`${name} has an input but no expected output.`);
         return false;
       }
-      question.test_cases.push({ input, output, hidden: hidden.has(n) });
+      (hidden ? private_ : public_).push({ input, output, hidden });
     }
-    if (question.test_cases.length > 10) {
-      error("Use at most 10 test cases.");
+    if (public_.length > MAX_PUBLIC_TESTS) {
+      error(`Use at most ${MAX_PUBLIC_TESTS} public test cases. Move the others to private_N columns.`);
       return false;
     }
+    if (private_.length > MAX_PRIVATE_TESTS) {
+      error(`Use at most ${MAX_PRIVATE_TESTS} private test cases.`);
+      return false;
+    }
+    question.test_cases = [...public_, ...private_];
     return true;
   });
 }
@@ -441,12 +462,11 @@ export async function parseQuestionFile(file, existingTexts = [], examType = "vi
 const ROLL_RE = /^[a-z]\d{6}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// An email, or an RGUKT roll number like N210368, as a lowercase email.
+// A student's email as a lowercase address. Only full emails count: students
+// sign in with more than one kind of email, so a roll number alone isn't enough.
 export function normalizeStudent(raw) {
   const value = String(raw ?? "").trim().replace(/^["'<(]+|["'>),;.]+$/g, "").toLowerCase();
-  if (ROLL_RE.test(value)) return value + STUDENT_DOMAIN;
-  if (EMAIL_RE.test(value)) return value;
-  return null;
+  return EMAIL_RE.test(value) ? value : null;
 }
 
 export function extractStudents(text) {
@@ -464,8 +484,8 @@ export function extractStudents(text) {
   return { valid, invalid };
 }
 
-// Any sheet, any column: picks up every email or roll number it can find and
-// ignores names, headers and other text.
+// Any sheet, any column: picks up every email it can find and ignores names,
+// headers and other text. Roll numbers on their own are reported, not added.
 export async function parseStudentFile(file) {
   const book = XLSX.read(await file.arrayBuffer(), { type: "array" });
   const valid = [];
@@ -479,7 +499,7 @@ export async function parseStudentFile(file) {
           if (email && !seen.has(email)) {
             seen.add(email);
             valid.push(email);
-          } else if (!email && token.includes("@")) {
+          } else if (!email && (token.includes("@") || ROLL_RE.test(token))) {
             invalid.push(token);
           }
         }

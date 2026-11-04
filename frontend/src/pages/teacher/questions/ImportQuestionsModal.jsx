@@ -12,7 +12,10 @@ import { QUESTION_TYPES, languageLabel, letter, pluralize } from "../../../lib/f
 function answerSummary(q) {
   if (q.type === "fill") return q.answers.join(" | ");
   if (q.type === "descriptive") return [q.difficulty, `${q.marks} marks`].filter(Boolean).join(" · ");
-  if (q.type === "code") return `${languageLabel(q.language)} · ${pluralize(q.test_cases.length, "test")}${q.test_cases.some((t) => t.hidden) ? " (some hidden)" : ""}`;
+  if (q.type === "code") {
+    const hidden = q.test_cases.filter((t) => t.hidden).length;
+    return `${languageLabel(q.language)} · ${q.test_cases.length ? `${q.test_cases.length - hidden} public, ${hidden} private tests` : "no tests"}`;
+  }
   return q.correct.map((i) => `${letter(i)}. ${q.options[i]}`).join(", ");
 }
 

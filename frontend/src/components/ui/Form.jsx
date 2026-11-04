@@ -1,20 +1,24 @@
 import { forwardRef, useId, useState } from "react";
 import { ChevronDown, Minus, Plus } from "lucide-react";
 import { cn } from "../../lib/cn";
+import { InfoTip } from "./Tooltip";
 
 const CONTROL =
   "w-full rounded-lg border border-line bg-surface px-3 text-sm text-ink shadow-sm transition placeholder:text-muted/70 focus:border-primary/60 focus:outline-none focus:ring-4 focus:ring-primary/10 disabled:cursor-not-allowed disabled:bg-subtle disabled:text-muted";
 
-export function Field({ label, hint, error, aside, children, className }) {
+export function Field({ label, hint, info, error, aside, children, className }) {
   const id = useId();
   return (
     <div className={cn("space-y-1.5", className)}>
       {(label || aside) && (
         <div className="flex items-center justify-between gap-2">
           {label && (
-            <label htmlFor={id} className="text-[13px] font-medium text-ink-2">
-              {label}
-            </label>
+            <span className="inline-flex items-center gap-1">
+              <label htmlFor={id} className="text-[13px] font-medium text-ink-2">
+                {label}
+              </label>
+              <InfoTip text={info} />
+            </span>
           )}
           {aside}
         </div>
@@ -44,11 +48,14 @@ export function Select({ className, children, ...props }) {
   );
 }
 
-export function Switch({ checked, onChange, disabled, label, description }) {
+export function Switch({ checked, onChange, disabled, label, description, info }) {
   return (
     <label className={cn("flex items-start justify-between gap-6", disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer")}>
       <span className="min-w-0">
-        <span className="block text-sm font-medium text-ink">{label}</span>
+        <span className="block text-sm font-medium text-ink">
+          {label}
+          <InfoTip text={info} className="ml-1.5" />
+        </span>
         {description && <span className="mt-0.5 block text-[13px] leading-snug text-muted">{description}</span>}
       </span>
       <button

@@ -4,14 +4,57 @@
     {
       "name": "backend",
       "runtimeExecutable": "go",
-      "runtimeArgs": ["-C", "/Users/maheshkarri/Desktop/Fullstack/FULLSTACK/WtExamify/backend", "run", "."],
+      "runtimeArgs": [
+        "-C",
+        "/Users/maheshkarri/Desktop/Fullstack/FULLSTACK/WtExamify/backend",
+        "run",
+        "."
+      ],
       "port": 8080
     },
     {
       "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "/Users/maheshkarri/Desktop/Fullstack/FULLSTACK/WtExamify/frontend", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/maheshkarri/Desktop/Fullstack/FULLSTACK/WtExamify/frontend",
+        "run",
+        "dev"
+      ],
       "port": 5173
+    },
+    {
+      "name": "backend-alt",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=8081",
+        "CORS_ORIGINS=http://localhost:5174",
+        "go",
+        "-C",
+        "/Users/maheshkarri/Desktop/Fullstack/FULLSTACK/WtExamify/backend",
+        "run",
+        "."
+      ],
+      "port": 8081,
+      "autoPort": false
+    },
+    {
+      "name": "frontend-alt",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "VITE_API_URL=http://localhost:8081",
+        "npm",
+        "--prefix",
+        "/Users/maheshkarri/Desktop/Fullstack/FULLSTACK/WtExamify/frontend",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5174",
+        "--strictPort"
+      ],
+      "port": 5174,
+      "autoPort": false
     }
   ]
 }

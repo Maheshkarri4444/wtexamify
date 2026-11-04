@@ -27,7 +27,26 @@ type runView struct {
 	Tests      []TestOutcome `json:"tests"`
 	Count      int           `json:"count"`
 	At         time.Time     `json:"at"`
-	Current    bool          `json:"current"` // false once the code has changed since this check
+	Current    bool          `json:"current"`  // false once the code has changed since this check
+	Revealed   []PaperTest   `json:"revealed"` // private tests this check failed, shown in full
+}
+
+// revealedTests are the private tests a check failed. Like LeetCode after a
+// wrong submission, the student sees what they were; passed ones stay hidden.
+func revealedTests(q Question, outcomes []TestOutcome) []PaperTest {
+	failed := map[string]bool{}
+	for _, o := range outcomes {
+		if !o.Executes {
+			failed[o.ID] = true
+		}
+	}
+	revealed := []PaperTest{}
+	for _, t := range q.TestCases {
+		if t.Hidden && failed[t.ID] {
+			revealed = append(revealed, PaperTest{ID: t.ID, Input: t.Input, Output: t.Output, Hidden: true})
+		}
+	}
+	return revealed
 }
 
 func viewRun(qid string, run RunResult, answer Answer, q Question) runView {
@@ -36,7 +55,7 @@ func viewRun(qid string, run RunResult, answer Answer, q Question) runView {
 		tests = []TestOutcome{}
 	}
 	current := strings.TrimSpace(answer.Code) != "" && run.CodeHash == codeHash(answerLanguage(q, answer), answer.Code)
-	return runView{QuestionID: qid, Language: run.Language, Percent: run.Percent, Tests: tests, Count: run.Count, At: run.At, Current: current}
+	return runView{QuestionID: qid, Language: run.Language, Percent: run.Percent, Tests: tests, Count: run.Count, At: run.At, Current: current, Revealed: revealedTests(q, tests)}
 }
 
 func runViews(e *Exam, att *Attempt) map[string]runView {

@@ -17,7 +17,7 @@ import (
 var defaultInstructions = map[string]string{
 	TypeViva:     "Answer every question before the timer runs out. Single-correct questions have exactly one right option. Multiple-correct questions can have more than one, and a wrong tick costs you that question. Fill-in-the-blank answers ignore capital letters and spaces. Stay in fullscreen and on this tab the whole time: leaving locks your exam until your teacher unlocks it.",
 	TypeInternal: "This is your question paper. Write your programs or answers where your teacher tells you to, on your lab system or on paper, and show your output when they come round. The paper closes when the timer ends.",
-	TypeExternal: "Write each answer in the editor; it saves automatically. Press Run to check it: you'll see whether each test case would execute and how correct your answer is. It's a dry run by AI, so small syntax slips don't count against you. Stay on this tab in fullscreen until you submit.",
+	TypeExternal: "Write each answer in the editor; it saves automatically. Press Run to check it against every test case: the public ones first, then the private ones, and how correct your answer is. If your code fails a private test, you'll see what it was. It's a dry run by AI, so small syntax slips don't count against you. Stay on this tab in fullscreen until you submit.",
 }
 
 var defaultPerSet = map[string]int{TypeViva: 10, TypeInternal: 3, TypeExternal: 3}
@@ -672,14 +672,14 @@ func addStudents(c *gin.Context) {
 		if strings.TrimSpace(raw) == "" {
 			continue
 		}
-		if email, ok := normalizeStudent(raw); ok {
+		if email, ok := normalizeEmail(raw); ok {
 			valid = append(valid, email)
 		} else {
 			invalid = append(invalid, strings.TrimSpace(raw))
 		}
 	}
 	if len(valid) == 0 {
-		respondErr(c, newError(http.StatusBadRequest, "No valid emails or roll numbers found."))
+		respondErr(c, newError(http.StatusBadRequest, "No valid email addresses found. Add students by their full email, like n210368@rguktn.ac.in."))
 		return
 	}
 
@@ -757,7 +757,7 @@ func removeStudents(c *gin.Context) {
 	}
 	requested := map[string]bool{}
 	for _, raw := range req.Emails {
-		if email, ok := normalizeStudent(raw); ok {
+		if email, ok := normalizeEmail(raw); ok {
 			requested[email] = true
 		}
 	}

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Check, Download, FileQuestion, FileSpreadsheet, Lock, Pencil, Plus, Search, Trash2 } from "lucide-react";
@@ -7,7 +7,7 @@ import { Badge } from "../../components/ui/Badge";
 import { Button, IconButton } from "../../components/ui/Button";
 import { Callout, EmptyState } from "../../components/ui/Feedback";
 import { Checkbox, Input, Select } from "../../components/ui/Form";
-import { ConfirmModal, Menu } from "../../components/ui/Overlay";
+import { ConfirmModal, InfoTip, Menu } from "../../components/ui/Overlay";
 import { cn } from "../../lib/cn";
 import { teacherApi } from "../../lib/api";
 import { downloadQuestionTemplate } from "../../lib/excel";
@@ -107,7 +107,7 @@ const EMPTY_TEXT = {
 };
 
 export default function QuestionsTab() {
-  const { bundle, setBundle } = useOutletContext();
+  const { bundle, setBundle, reload } = useOutletContext();
   const { exam } = bundle;
   const examType = exam.type;
   const locked = exam.content_locked;
@@ -154,6 +154,20 @@ export default function QuestionsTab() {
     };
   }, [exam.questions]);
 
+  // Once a student starts, nothing here may change: close whatever was open.
+  useEffect(() => {
+    if (!locked) return;
+    setEditor(null);
+    setImporting(false);
+    setDeleting(null);
+    setSelected(new Set());
+  }, [locked]);
+
+  // A save the server refused because the exam just locked: show the lock now.
+  const refused = (error) => {
+    if (error.status === 409) reload();
+  };
+
   const Editor = examType === "internal" ? DescriptiveEditor : examType === "external" ? CodeQuestionEditor : QuestionEditor;
   const QuestionItem = examType === "internal" ? DescriptiveCard : examType === "external" ? CodeCard : QuestionCard;
 
@@ -171,6 +185,7 @@ export default function QuestionsTab() {
       return true;
     } catch (error) {
       toast.error(error.message);
+      refused(error);
       return false;
     } finally {
       setBusy(false);
@@ -185,6 +200,7 @@ export default function QuestionsTab() {
       return true;
     } catch (error) {
       toast.error(error.message, { duration: 6000 });
+      refused(error);
       return false;
     }
   };
@@ -199,6 +215,7 @@ export default function QuestionsTab() {
       setDeleting(null);
     } catch (error) {
       toast.error(error.message);
+      refused(error);
     } finally {
       setBusy(false);
     }
@@ -298,7 +315,13 @@ export default function QuestionsTab() {
       </div>
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-line bg-surface px-4 py-3 text-[13px] text-muted">
-        <span className="font-semibold text-ink">{pluralize(exam.questions.length, "question")}</span>
+        <span className="font-semibold text-ink">
+          {pluralize(exam.questions.length, "question")}
+          <InfoTip
+            text="This exam's question bank. Examify deals it into sets using the blueprint on the Sets tab. Once a student starts, questions can't be added, edited or deleted."
+            className="ml-1.5"
+          />
+        </span>
         {examType === "viva" && (
           <>
             <span>{counts.mcq_single} single</span>

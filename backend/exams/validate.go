@@ -17,10 +17,10 @@ const (
 	maxAnswerText   = 500
 	maxCodeLength   = 20000
 	maxStarterCode  = 5000
-	maxTestCases    = 10
+	maxPublicTests  = 2  // shown to students next to the question
+	maxPrivateTests = 10 // shown only once a student's code fails one
 	maxTestText     = 2000
 	maxContext      = 20000
-	studentDomain   = "@rguktn.ac.in"
 )
 
 // Languages a code question can be answered in. "any" lets the student choose.
@@ -107,25 +107,40 @@ func cleanQuestion(q Question, examType string) (Question, error) {
 		if runeLen(q.StarterCode) > maxStarterCode {
 			return q, fmt.Errorf("the starter code is longer than %d characters", maxStarterCode)
 		}
-		tests := []TestCase{}
-		for i, t := range q.TestCases {
+		var public, private []TestCase
+		for _, t := range q.TestCases {
+			kind, n := "public", len(public)+1
+			if t.Hidden {
+				kind, n = "private", len(private)+1
+			}
 			t.Input, t.Output = strings.TrimSpace(t.Input), strings.TrimSpace(t.Output)
 			if t.Input == "" && t.Output == "" {
 				continue
 			}
 			if t.Output == "" {
-				return q, fmt.Errorf("test case %d needs an expected output", i+1)
+				return q, fmt.Errorf("%s test %d needs an expected output", kind, n)
 			}
 			if runeLen(t.Input) > maxTestText || runeLen(t.Output) > maxTestText {
-				return q, fmt.Errorf("test case %d is longer than %d characters", i+1, maxTestText)
+				return q, fmt.Errorf("%s test %d is longer than %d characters", kind, n, maxTestText)
 			}
-			t.ID = fmt.Sprintf("t%d", len(tests)+1)
-			tests = append(tests, t)
+			if t.Hidden {
+				private = append(private, t)
+			} else {
+				public = append(public, t)
+			}
 		}
-		if len(tests) > maxTestCases {
-			return q, fmt.Errorf("use at most %d test cases", maxTestCases)
+		if len(public) > maxPublicTests {
+			return q, fmt.Errorf("use at most %d public test cases", maxPublicTests)
 		}
-		q.TestCases = tests
+		if len(private) > maxPrivateTests {
+			return q, fmt.Errorf("use at most %d private test cases", maxPrivateTests)
+		}
+		// Public tests come first, so everyone numbers them the same way.
+		q.TestCases = make([]TestCase, 0, len(public)+len(private))
+		for _, t := range append(public, private...) {
+			t.ID = fmt.Sprintf("t%d", len(q.TestCases)+1)
+			q.TestCases = append(q.TestCases, t)
+		}
 	case QMCQSingle, QMCQMulti:
 		options := []string{}
 		newIndex := map[int]int{}
@@ -200,13 +215,11 @@ func validateBlueprint(bp Blueprint) error {
 	return nil
 }
 
-// normalizeStudent turns an email or an RGUKT roll number (N210368) into a
-// lowercase email address.
-func normalizeStudent(raw string) (string, bool) {
+// normalizeEmail trims and lowercases a student's email address. Only full
+// addresses count: students sign in with more than one kind of email, so a
+// roll number alone can't say which one is theirs.
+func normalizeEmail(raw string) (string, bool) {
 	value := strings.ToLower(strings.Trim(strings.TrimSpace(raw), `"'<>,;`))
-	if rollNumberRe.MatchString(value) {
-		return value + studentDomain, true
-	}
 	if emailRe.MatchString(value) {
 		return value, true
 	}

@@ -48,7 +48,7 @@ export default function Lobby({ info, attempt, sharing, onShare, onStart, starti
   const rules = [
     type === "internal" && "This page is your question paper. Write your programs the way your teacher tells you, then close the paper.",
     type === "external" &&
-      "Each question has a Run button. An AI dry-runs your code against the test cases and your teacher's answer: you see how correct it is and whether each test would execute. Small syntax slips don't matter; the logic does.",
+      "Each question has a Run button. An AI dry-runs your code against every test case and your teacher's answer. You see the public tests first, then the private ones (with any your code fails shown in full), and how correct your code is. Small syntax slips don't matter; the logic does.",
     type === "external" && (info.max_runs > 0 ? `You can run each question up to ${info.max_runs} times. Running the same code again doesn't use one.` : "You can run each question as often as you like."),
     type === "external" && "When you submit, your final code for every question is checked, even code you never ran.",
     leaveRule,

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/Maheshkarri4444/wtexamify/config.go"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -126,7 +128,24 @@ type attemptState struct {
 	Result           *studentResult     `json:"result"`
 }
 
-func infoFor(e *Exam) studentExamInfo {
+// Testing accounts that may always copy and paste, even in an exam that blocks
+// it. More can be added with PASTE_ALLOWED_EMAILS in .env.
+var pasteTesterEmails = []string{"n210507@rguktn.ac.in"}
+
+func clipboardAlwaysAllowed(email string) bool {
+	email = strings.TrimSpace(email)
+	for _, list := range [][]string{pasteTesterEmails, config.List("PASTE_ALLOWED_EMAILS")} {
+		for _, allowed := range list {
+			if strings.EqualFold(email, allowed) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// infoFor is what a student may know about an exam before and while writing it.
+func infoFor(e *Exam, email string) studentExamInfo {
 	info := studentExamInfo{
 		ID: e.ID, Title: e.Title, Type: e.Type, Status: e.Status, Instructions: e.Instructions,
 		DurationMinutes: e.DurationMinutes, QuestionsPerSet: e.Blueprint.PerSet,
@@ -136,7 +155,7 @@ func infoFor(e *Exam) studentExamInfo {
 			ScreenShare:          e.Settings.RequireScreenShare,
 			BlockExtendedDisplay: e.Settings.BlockExtendedDisplay,
 			LockOnLeave:          !e.Settings.AllowLeaving,
-			BlockClipboard:       !e.Settings.AllowClipboard,
+			BlockClipboard:       !e.Settings.AllowClipboard && !clipboardAlwaysAllowed(email),
 			LockOnRejoin:         e.Settings.LockOnRejoin,
 		},
 		LiveAt: e.LiveAt,
@@ -204,7 +223,7 @@ func stateFor(e *Exam, att *Attempt) attemptState {
 				Status: r.Status, Awarded: r.Awarded, Max: r.Max,
 			}
 			if q.Type == QCode {
-				item.Language, item.Code, item.Solution, item.Percent, item.Tests = answerLanguage(q, answer), answer.Code, q.Solution, r.Percent, pq.Tests
+				item.Language, item.Code, item.Solution, item.Percent, item.Tests = answerLanguage(q, answer), answer.Code, q.Solution, r.Percent, allTests(q)
 				if run, ok := att.Runs[pq.ID]; ok && run.CodeHash == codeHash(answerLanguage(q, answer), answer.Code) {
 					item.Outcomes = run.Tests
 				}
@@ -225,7 +244,7 @@ func respondPaper(c *gin.Context, e *Exam, att *Attempt) {
 	if answers == nil {
 		answers = map[string]Answer{}
 	}
-	c.JSON(http.StatusOK, gin.H{"exam": infoFor(e), "state": stateFor(e, att), "questions": questions, "answers": answers, "runs": runViews(e, att)})
+	c.JSON(http.StatusOK, gin.H{"exam": infoFor(e, att.StudentEmail), "state": stateFor(e, att), "questions": questions, "answers": answers, "runs": runViews(e, att)})
 }
 
 func findExam(ctx context.Context, filter bson.M, projection bson.M) (*Exam, error) {
@@ -291,7 +310,7 @@ func listMyExams(c *gin.Context) {
 	}
 	cards := []gin.H{}
 	for _, e := range found {
-		cards = append(cards, gin.H{"exam": infoFor(e), "attempt": summaryFor(e, byExam[e.ID])})
+		cards = append(cards, gin.H{"exam": infoFor(e, email), "attempt": summaryFor(e, byExam[e.ID])})
 	}
 	c.JSON(http.StatusOK, gin.H{"exams": cards})
 }
@@ -314,9 +333,9 @@ func getMyExam(c *gin.Context) {
 	err = attemptsCol().FindOne(ctx, bson.M{"exam_id": exam.ID, "student_email": email}).Decode(&att)
 	switch {
 	case err == nil:
-		c.JSON(http.StatusOK, gin.H{"exam": infoFor(exam), "attempt": summaryFor(exam, &att)})
+		c.JSON(http.StatusOK, gin.H{"exam": infoFor(exam, email), "attempt": summaryFor(exam, &att)})
 	case errors.Is(err, mongo.ErrNoDocuments):
-		c.JSON(http.StatusOK, gin.H{"exam": infoFor(exam), "attempt": nil})
+		c.JSON(http.StatusOK, gin.H{"exam": infoFor(exam, email), "attempt": nil})
 	default:
 		respondErr(c, err)
 	}

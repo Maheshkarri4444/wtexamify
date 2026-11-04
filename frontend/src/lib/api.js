@@ -73,6 +73,7 @@ export const teacherApi = {
   extendAll: (id, minutes) => post(`${exam(id)}/extend`, { minutes }),
   results: (id) => get(`${exam(id)}/results`),
   attempt: (id, aid) => get(`${exam(id)}/attempts/${aid}`),
+  answerSheets: (id) => get(`${exam(id)}/answer-sheets`),
   attemptAction: (id, aid, action, minutes) => post(`${exam(id)}/attempts/${aid}/action`, { action, minutes }),
   setMarks: (id, aid, questionId, marks) => post(`${exam(id)}/attempts/${aid}/marks`, { question_id: questionId, marks }),
 };

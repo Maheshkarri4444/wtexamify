@@ -9,7 +9,7 @@ import { Card, CardHeader } from "../../components/ui/Card";
 import { Meter } from "../../components/ui/Data";
 import { Callout, EmptyState } from "../../components/ui/Feedback";
 import { Stepper, Switch } from "../../components/ui/Form";
-import { ConfirmModal } from "../../components/ui/Overlay";
+import { ConfirmModal, InfoTip } from "../../components/ui/Overlay";
 import { cn } from "../../lib/cn";
 import { teacherApi } from "../../lib/api";
 import { DIFFICULTY, pluralize } from "../../lib/format";
@@ -154,11 +154,14 @@ export default function SetsTab() {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
         <Card>
-          <CardHeader icon={SlidersHorizontal} title="Blueprint" description="What every set looks like. Examify works out how many sets your questions can make." />
+          <CardHeader icon={SlidersHorizontal} title="Blueprint" info="The recipe for every set: how many questions, and optionally how many of each difficulty. Examify makes as many sets as it takes to use every question at least once." description="What every set looks like. Examify works out how many sets your questions can make." />
           <div className="space-y-6 p-5">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <div className="text-sm font-medium text-ink">Questions per set</div>
+                <div className="text-sm font-medium text-ink">
+                  Questions per set
+                  <InfoTip text="How many questions each student answers. With more questions than this, Examify makes several sets so neighbours get different papers." className="ml-1.5" />
+                </div>
                 <div className="text-[13px] text-muted">Every student answers this many.</div>
               </div>
               <Stepper
@@ -175,7 +178,7 @@ export default function SetsTab() {
                 checked={bp.use_difficulty}
                 onChange={toggleDifficulty}
                 disabled={locked}
-                label="Balance by difficulty"
+                label="Balance by difficulty" info="Every set gets the same number of easy, medium and hard questions, so no set is easier than another."
                 description="Give every set the same mix of easy, medium and hard questions. If a level runs short, its questions are reused across sets."
               />
             </div>
@@ -193,7 +196,10 @@ export default function SetsTab() {
                   </div>
                 ))}
                 <div className={cn("flex items-center justify-between border-t border-line pt-3 text-[13px]", sumOk ? "text-muted" : "font-medium text-danger-text")}>
-                  <span>Easy + medium + hard</span>
+                  <span>
+                    Easy + medium + hard
+                    <InfoTip text="The three counts must add up to the questions per set. In the bank shows how many questions of each level you have; a level with too few is reused across sets." className="ml-1" />
+                  </span>
                   <span className="tabular-nums">
                     {sum} of {bp.per_set}
                   </span>
@@ -214,7 +220,7 @@ export default function SetsTab() {
         </Card>
 
         <Card className={cn("overflow-hidden transition", dirty && "ring-2 ring-primary/25")}>
-          <CardHeader icon={Layers3} title={dirty ? "Preview" : "Current sets"} description={dirty ? "Not saved yet. This is what saving would produce." : "Dealt to students in roll-number order."} />
+          <CardHeader icon={Layers3} title={dirty ? "Preview" : "Current sets"} info="The questions in each set. Students are dealt sets in email order, so students sitting side by side get different sets." description={dirty ? "Not saved yet. This is what saving would produce." : "Dealt to students in email order (roll-number order for college emails)."} />
           <div className="p-5">
             {report.ok ? (
               <>

@@ -7,7 +7,7 @@ import { Button, IconButton } from "../../components/ui/Button";
 import { Card, CardHeader } from "../../components/ui/Card";
 import { EmptyState } from "../../components/ui/Feedback";
 import { Checkbox, Input, Textarea } from "../../components/ui/Form";
-import { ConfirmModal, Modal } from "../../components/ui/Overlay";
+import { ConfirmModal, InfoTip, Modal } from "../../components/ui/Overlay";
 import { teacherApi } from "../../lib/api";
 import { extractStudents, parseStudentFile } from "../../lib/excel";
 import { pluralize, rollFromEmail } from "../../lib/format";
@@ -53,7 +53,7 @@ export default function StudentsTab() {
       const parts = [`Added ${pluralize(next.added, "student")}`];
       if (next.already) parts.push(`${next.already} already on the list`);
       toast.success(`${parts.join(" · ")}.`);
-      if (next.invalid?.length) toast.error(`Skipped ${pluralize(next.invalid.length, "entry", "entries")} that aren't emails or roll numbers.`);
+      if (next.invalid?.length) toast.error(`Skipped ${pluralize(next.invalid.length, "entry", "entries")} that aren't email addresses.`);
       clear?.();
     } catch (error) {
       toast.error(error.message);
@@ -67,7 +67,7 @@ export default function StudentsTab() {
     try {
       const { valid, invalid } = await parseStudentFile(file);
       if (!valid.length) {
-        toast.error("No emails or roll numbers found in that file.");
+        toast.error(invalid.length ? `No email addresses in that file, only ${invalid.slice(0, 2).join(", ")}${invalid.length > 2 ? "…" : ""}. Add the students' full emails.` : "No email addresses found in that file.");
         return;
       }
       setPendingFile({ name: file.name, valid, invalid });
@@ -110,19 +110,25 @@ export default function StudentsTab() {
     <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
       <div className="space-y-6">
         <Card>
-          <CardHeader icon={UserPlus} title="Add students" description="Only students on this list can see and write this exam." />
+          <CardHeader icon={UserPlus} title="Add students" info="Only students on this list can see and write this exam. Add each student's full email, the one they sign in with." description="Only students on this list can see and write this exam." />
           <div className="space-y-3 p-5">
             <Textarea
               rows={5}
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder={"Paste emails or roll numbers\nN210368, N210369\nn210370@rguktn.ac.in"}
+              placeholder={"Paste student emails\nn210368@rguktn.ac.in, n210369@rguktn.ac.in\nsomeone@gmail.com"}
               className="font-mono text-[13px]"
             />
             <div className="flex items-center justify-between text-xs text-muted">
               <span>
-                {preview.valid.length ? `${pluralize(preview.valid.length, "student")} found` : "Separate with commas, spaces or new lines"}
-                {preview.invalid.length > 0 && <span className="text-danger-text"> · {preview.invalid.length} not recognised</span>}
+                {preview.valid.length ? `${pluralize(preview.valid.length, "student")} found` : "Full email addresses, separated by commas, spaces or new lines"}
+                {preview.invalid.length > 0 && (
+                  <span className="text-danger-text">
+                    {" "}
+                    · {preview.invalid.length} not {preview.invalid.length === 1 ? "an email" : "emails"} ({preview.invalid.slice(0, 2).join(", ")}
+                    {preview.invalid.length > 2 ? "…" : ""})
+                  </span>
+                )}
               </span>
             </div>
             <Button className="w-full" icon={UserPlus} disabled={!preview.valid.length} loading={busy && Boolean(text)} onClick={() => add(preview.valid, () => setText(""))}>
@@ -139,14 +145,17 @@ export default function StudentsTab() {
             <Button variant="secondary" className="w-full" icon={FileSpreadsheet} onClick={() => fileRef.current?.click()}>
               Import from Excel or CSV
             </Button>
-            <p className="text-xs leading-relaxed text-muted">Any column works: Examify picks up every email and roll number (N210368 becomes n210368@rguktn.ac.in) and ignores names and headers.</p>
+            <p className="text-xs leading-relaxed text-muted">Any column works: Examify picks up every email address and ignores names and headers. Roll numbers on their own aren't added, so list each student's full email.</p>
           </div>
         </Card>
 
         {setCounts.length > 0 && (
           <Card className="p-5">
-            <div className="text-sm font-semibold text-ink">Students per set</div>
-            <p className="mt-0.5 text-[13px] text-muted">Dealt in roll-number order, so neighbours get different sets.</p>
+            <div className="text-sm font-semibold text-ink">
+              Students per set
+              <InfoTip text="How many students were dealt each set. Sets are dealt in email order, so for college emails neighbours by roll number get different sets." className="ml-1.5" />
+            </div>
+            <p className="mt-0.5 text-[13px] text-muted">Dealt in email order (roll-number order for college emails), so neighbours get different sets.</p>
             <div className="mt-3 flex flex-wrap gap-1.5">
               {setCounts.map(([set, count]) => (
                 <span key={set} className="rounded-lg bg-subtle px-2.5 py-1 text-[13px] text-ink-2">
@@ -161,7 +170,7 @@ export default function StudentsTab() {
       <Card className="flex min-h-[420px] flex-col">
         <CardHeader
           icon={Users}
-          title={`${pluralize(exam.allowed_students.length, "student")} allowed`}
+          title={`${pluralize(exam.allowed_students.length, "student")} allowed`} info="Everyone who can write this exam, with their set and whether they've started. Students who have started can't be removed."
           actions={
             exam.allowed_students.length > 0 && (
               <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setRemoving("all")} className="text-danger-text hover:bg-danger-soft hover:text-danger-text">
@@ -177,7 +186,7 @@ export default function StudentsTab() {
             <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
               <div className="relative min-w-[12rem] flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-                <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by roll number or email" className="h-9 pl-9" />
+                <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by email" className="h-9 pl-9" />
               </div>
               {selected.size > 0 && (
                 <Button size="sm" variant="danger-soft" icon={Trash2} onClick={() => setRemoving([...selected])}>
@@ -256,7 +265,12 @@ export default function StudentsTab() {
               {pendingFile.valid.slice(0, 200).join(", ")}
               {pendingFile.valid.length > 200 && ` … and ${pendingFile.valid.length - 200} more`}
             </div>
-            {pendingFile.invalid.length > 0 && <p className="text-[13px] text-danger-text">Skipping {pluralize(pendingFile.invalid.length, "entry", "entries")} that look like emails but aren't valid: {pendingFile.invalid.slice(0, 5).join(", ")}</p>}
+            {pendingFile.invalid.length > 0 && (
+              <p className="text-[13px] text-danger-text">
+                Skipping {pluralize(pendingFile.invalid.length, "entry", "entries")} that aren't full email addresses: {pendingFile.invalid.slice(0, 5).join(", ")}
+                {pendingFile.invalid.length > 5 && "…"}
+              </p>
+            )}
           </div>
         )}
       </Modal>

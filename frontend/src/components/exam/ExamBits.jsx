@@ -56,6 +56,8 @@ export function QuestionText({ text, className }) {
 }
 
 function CodeRow({ label, hint, icon: Icon, code, revealed, onRegenerate, busy }) {
+  const [peek, setPeek] = useState(false);
+  const visible = revealed || peek;
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(code);
@@ -73,7 +75,18 @@ function CodeRow({ label, hint, icon: Icon, code, revealed, onRegenerate, busy }
         <div className="text-[13px] font-medium text-ink">{label}</div>
         <div className="text-xs text-muted">{hint}</div>
       </div>
-      <span className={cn("font-mono text-[17px] font-semibold tracking-[0.2em] text-ink", !revealed && "select-none blur-[5px]")}>{code || "——————"}</span>
+      <button
+        type="button"
+        onClick={() => setPeek((v) => !v)}
+        aria-label={visible ? `Hide the ${label.toLowerCase()}` : `Show the ${label.toLowerCase()}`}
+        title={visible ? "Click to hide" : "Click to see the code"}
+        className={cn(
+          "rounded-lg px-2 py-0.5 font-mono text-[17px] font-semibold tracking-[0.2em] transition hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+          visible ? "text-ink" : "text-muted"
+        )}
+      >
+        {visible ? code || "——————" : "••••••"}
+      </button>
       <IconButton icon={Copy} label={`Copy ${label.toLowerCase()}`} size="sm" onClick={copy} />
       {onRegenerate && <IconButton icon={RefreshCw} label={`New ${label.toLowerCase()}`} size="sm" onClick={onRegenerate} disabled={busy} />}
     </div>
@@ -86,10 +99,10 @@ export function TeacherCodes({ settings, onRegenerate, busy, className }) {
   return (
     <div className={cn("space-y-2.5", className)}>
       <div className="flex items-center justify-between">
-        <span className="text-[13px] font-medium text-muted">Only you should see these</span>
+        <span className="text-[13px] font-medium text-muted">Only you should see these. Click a code to see it.</span>
         <button type="button" onClick={() => setRevealed((v) => !v)} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-primary-text hover:underline">
           {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-          {revealed ? "Hide" : "Reveal"}
+          {revealed ? "Hide both" : "Show both"}
         </button>
       </div>
       <CodeRow

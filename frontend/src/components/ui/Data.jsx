@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { cn } from "../../lib/cn";
+import { InfoTip } from "./Tooltip";
 
 const ICON_TONES = {
   neutral: "bg-subtle text-muted",
@@ -11,11 +12,14 @@ const ICON_TONES = {
 };
 
 /** A labelled number. Big standalone values keep proportional figures. */
-export function StatTile({ label, value, hint, icon: Icon, tone = "neutral", className }) {
+export function StatTile({ label, value, hint, info, icon: Icon, tone = "neutral", className }) {
   return (
     <div className={cn("rounded-2xl border border-line bg-surface p-4 shadow-card", className)}>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[13px] font-medium text-muted">{label}</span>
+        <span className="text-[13px] font-medium text-muted">
+          {label}
+          <InfoTip text={info} className="ml-1" />
+        </span>
         {Icon && (
           <span className={cn("flex h-7 w-7 items-center justify-center rounded-lg", ICON_TONES[tone])}>
             <Icon className="h-3.5 w-3.5" />

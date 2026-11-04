@@ -37,7 +37,9 @@ An internal is a question paper only: students read it in Examify and write thei
 
 ## External questions spreadsheet
 
-Code questions are checked by AI (Gemini) against your answer, with no compiler. Run gives the student an AI dry run of their code: how correct it is (0–100%) and whether each test case would execute. Small syntax slips don't count; the logic does.
+Code questions are checked by AI (Gemini) against your answer, with no compiler. Run gives the student an AI dry run of their code against every test case: how correct it is (0–100%) and which tests pass. Small syntax slips don't count; the logic does.
+
+Each question can have up to **2 public** test cases, which students see next to the question, and up to **10 private** ones. A Run checks them all at once. As on LeetCode, the student first sees how the public tests went, then the private ones. A private test stays hidden until the student's code fails it; then its input and expected output are shown.
 
 | Column | Required | What to put in it |
 | --- | --- | --- |
@@ -47,8 +49,10 @@ Code questions are checked by AI (Gemini) against your answer, with no compiler.
 | `starter_code` | no | What the editor starts with, such as a function signature. |
 | `marks` | no | Defaults to 1. Students get marks × the AI's correctness %, so 80% correct on a 10-mark question is 8 marks. |
 | `difficulty` | no | `easy`, `medium` or `hard`. |
-| `test_1_input`, `test_1_output` … `test_10_*` | no | Test cases, like LeetCode. An input can be empty, but an output can't. With no test cases at all, the AI just compares the student's code with your answer. |
-| `hidden_tests` | no | Test numbers to hide, such as `2,3`, or `all`. Students still see whether a hidden test executes, but not its input or output. |
+| `public_1_input`, `public_1_output`, `public_2_input`, `public_2_output` | no | Up to 2 public test cases. An input can be empty, but an output can't. |
+| `private_1_input`, `private_1_output` … `private_10_*` | no | Up to 10 private test cases. With no test cases at all, the AI just compares the student's code with your answer. |
+
+Sheets made with the older template (`test_1_input` … plus a `hidden_tests` column such as `2,3`) still import: hidden tests become private, the rest public, with at most 2 public.
 
 ## How code answers are marked
 
@@ -68,11 +72,11 @@ Code questions are checked by AI (Gemini) against your answer, with no compiler.
 
 ## Students spreadsheet (or paste)
 
-Any layout, any sheet: every email and RGUKT roll number found is picked up, and names, headers and other text are ignored. `N210368` becomes `n210368@rguktn.ac.in`. Only students on an exam's list can see or write it.
+Students are added by their **full email address**, the one they sign in with, so any email provider works. Any layout, any sheet: every email found is picked up, and names and headers are ignored. A roll number on its own (`N210368`) isn't added; the import lists it so you can fix it. Only students on an exam's list can see or write it.
 
 ## How sets are made
 
-The teacher sets the questions per set (and optionally how many easy/medium/hard). The number of sets is the smallest number that uses every question at least once. Questions are used up before any is repeated; when a difficulty runs short (or the last set is short), it's topped up with the least-used questions **of the same difficulty**, never twice in one set. Sets are dealt to students in roll-number order, so neighbours get different sets, and question and option order is shuffled per student.
+The teacher sets the questions per set (and optionally how many easy/medium/hard). The number of sets is the smallest number that uses every question at least once. Questions are used up before any is repeated; when a difficulty runs short (or the last set is short), it's topped up with the least-used questions **of the same difficulty**, never twice in one set. Sets are dealt to students in email order (roll-number order for college emails), so neighbours get different sets, and question and option order is shuffled per student.
 
 Sets are rebuilt and re-dealt whenever questions or the blueprint change, until the first student starts. From then on questions, blueprint and sets are locked; students can still be added (they join the emptiest set).
 

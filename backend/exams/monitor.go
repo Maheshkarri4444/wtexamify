@@ -346,20 +346,9 @@ type runSummary struct {
 	Model   string        `json:"model"`
 }
 
-// attemptDetail is one student's paper with their answers against the key.
-func attemptDetail(c *gin.Context) {
-	ctx, cancel := dbCtx()
-	defer cancel()
-	exam, err := loadOwnedExam(ctx, c)
-	if err != nil {
-		respondErr(c, err)
-		return
-	}
-	att, err := loadAttemptForExam(ctx, exam.ID, c)
-	if err != nil {
-		respondErr(c, err)
-		return
-	}
+// sheetItems is one student's paper, question by question, with their answers
+// against the key and how each was marked.
+func sheetItems(exam *Exam, att *Attempt) []reviewQuestion {
 	byID := questionMap(exam)
 	stored := map[string]QuestionResult{}
 	for _, r := range att.Results {
@@ -409,6 +398,24 @@ func attemptDetail(c *gin.Context) {
 		}
 		items = append(items, item)
 	}
+	return items
+}
+
+// attemptDetail is one student's paper with their answers against the key.
+func attemptDetail(c *gin.Context) {
+	ctx, cancel := dbCtx()
+	defer cancel()
+	exam, err := loadOwnedExam(ctx, c)
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	att, err := loadAttemptForExam(ctx, exam.ID, c)
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	items := sheetItems(exam, att)
 	now := time.Now()
 	row := rowFor(att.StudentEmail, att.StudentName, att.SetNumber, true, att, now)
 	if att.Events == nil {
@@ -472,6 +479,32 @@ func setMarks(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// answerSheets is every student's answer sheet at once, for the PDF download.
+func answerSheets(c *gin.Context) {
+	ctx, cancel := dbCtx()
+	defer cancel()
+	exam, err := loadOwnedExam(ctx, c)
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	attempts, err := attemptsFor(ctx, exam, bson.M{"events": 0})
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	sort.Slice(attempts, func(i, j int) bool { return attempts[i].StudentEmail < attempts[j].StudentEmail })
+	now := time.Now()
+	sheets := make([]gin.H, 0, len(attempts))
+	for _, att := range attempts {
+		sheets = append(sheets, gin.H{
+			"student": rowFor(att.StudentEmail, att.StudentName, att.SetNumber, true, att, now),
+			"items":   sheetItems(exam, att),
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"exam": gin.H{"title": exam.Title, "type": exam.Type, "duration_minutes": exam.DurationMinutes}, "sheets": sheets})
 }
 
 func formatMarks(v float64) string {

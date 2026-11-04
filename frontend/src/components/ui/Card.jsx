@@ -1,4 +1,5 @@
 import { cn } from "../../lib/cn";
+import { InfoTip } from "./Tooltip";
 
 export function Card({ className, children, ...props }) {
   return (
@@ -8,7 +9,7 @@ export function Card({ className, children, ...props }) {
   );
 }
 
-export function CardHeader({ title, description, icon: Icon, actions, className }) {
+export function CardHeader({ title, description, info, icon: Icon, actions, className }) {
   return (
     <div className={cn("flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4", className)}>
       <div className="flex min-w-0 items-start gap-3">
@@ -18,7 +19,10 @@ export function CardHeader({ title, description, icon: Icon, actions, className 
           </div>
         )}
         <div className="min-w-0">
-          <h3 className="text-[15px] font-semibold text-ink">{title}</h3>
+          <h3 className="text-[15px] font-semibold text-ink">
+            {title}
+            <InfoTip text={info} className="ml-1.5" />
+          </h3>
           {description && <p className="mt-0.5 text-sm text-muted">{description}</p>}
         </div>
       </div>

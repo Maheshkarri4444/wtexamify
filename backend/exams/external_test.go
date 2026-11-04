@@ -60,6 +60,47 @@ func TestCleanQuestionByExamType(t *testing.T) {
 	}
 }
 
+func TestPublicAndPrivateTests(t *testing.T) {
+	tests := []TestCase{
+		{Input: "p", Output: "private first in the form", Hidden: true},
+		{Input: "a", Output: "1"},
+		{Input: "b", Output: "2"},
+	}
+	q, err := cleanQuestion(Question{Text: "x", Language: "python", Solution: "y", TestCases: tests}, TypeExternal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(q.TestCases) != 3 || q.TestCases[0].Hidden || q.TestCases[1].Hidden || !q.TestCases[2].Hidden || q.TestCases[2].ID != "t3" {
+		t.Fatalf("public tests should come first and IDs follow that order: %+v", q.TestCases)
+	}
+
+	threePublic := append(tests, TestCase{Input: "c", Output: "3"})
+	if _, err := cleanQuestion(Question{Text: "x", Language: "python", Solution: "y", TestCases: threePublic}, TypeExternal); err == nil || !strings.Contains(err.Error(), "2 public") {
+		t.Fatalf("more than 2 public tests must be refused, got %v", err)
+	}
+	private := []TestCase{}
+	for i := 0; i < 11; i++ {
+		private = append(private, TestCase{Output: "x", Hidden: true})
+	}
+	if _, err := cleanQuestion(Question{Text: "x", Language: "python", Solution: "y", TestCases: private}, TypeExternal); err == nil || !strings.Contains(err.Error(), "10 private") {
+		t.Fatalf("more than 10 private tests must be refused, got %v", err)
+	}
+	if _, err := cleanQuestion(Question{Text: "x", Language: "python", Solution: "y", TestCases: []TestCase{{Input: "5", Hidden: true}}}, TypeExternal); err == nil || !strings.Contains(err.Error(), "private test 1") {
+		t.Fatalf("the error should name the private test, got %v", err)
+	}
+}
+
+func TestFailedPrivateTestsAreRevealed(t *testing.T) {
+	q := codeQuestion() // t1 public, t2 private
+	if got := revealedTests(q, []TestOutcome{{ID: "t1", Executes: false}, {ID: "t2", Executes: true}}); len(got) != 0 {
+		t.Fatalf("a passed private test and a failed public one reveal nothing new: %+v", got)
+	}
+	got := revealedTests(q, []TestOutcome{{ID: "t1", Executes: true}, {ID: "t2", Executes: false}})
+	if len(got) != 1 || got[0].ID != "t2" || got[0].Output != "Kiran" || got[0].Input != "secret" {
+		t.Fatalf("a failed private test is shown in full: %+v", got)
+	}
+}
+
 func TestGradeCodeUsesTheCheckOfTheSubmittedCode(t *testing.T) {
 	q := codeQuestion()
 	code := "select name from employees where dept='CSE'"
@@ -182,5 +223,21 @@ func TestSanitizeKeepsCodeAndValidLanguage(t *testing.T) {
 	clean, answered := sanitizeAnswers(map[string]Answer{"qa": {Code: "  int main() {}\n", Language: "cobol"}}, att)
 	if answered != 1 || clean["qa"].Code != "  int main() {}\n" || clean["qa"].Language != "" {
 		t.Fatalf("code keeps its formatting and unknown languages are dropped: %+v", clean)
+	}
+}
+
+func TestClipboardAlwaysAllowed(t *testing.T) {
+	if !clipboardAlwaysAllowed(" N210507@rguktn.ac.in") {
+		t.Error("the testing account should always be able to paste")
+	}
+	if clipboardAlwaysAllowed("n210508@rguktn.ac.in") {
+		t.Error("other students follow the exam's clipboard setting")
+	}
+	e := &Exam{Settings: Settings{AllowClipboard: false}}
+	if !infoFor(e, "n299001@rguktn.ac.in").Requirements.BlockClipboard {
+		t.Error("a normal student should have the clipboard blocked")
+	}
+	if infoFor(e, "n210507@rguktn.ac.in").Requirements.BlockClipboard {
+		t.Error("the testing account should not have the clipboard blocked")
 	}
 }

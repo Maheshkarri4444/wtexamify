@@ -56,7 +56,8 @@ function Block({ label, children }) {
 
 function QuestionPane({ question, index, total, context, contextOpen, onToggleContext }) {
   const tests = question.tests || [];
-  const hidden = tests.filter((t) => t.hidden).length;
+  const publicTests = tests.filter((t) => !t.hidden);
+  const privateCount = tests.length - publicTests.length;
   return (
     <div key={question.id} className="animate-fade-in space-y-6 p-5 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
@@ -86,21 +87,21 @@ function QuestionPane({ question, index, total, context, contextOpen, onToggleCo
           <p className="mt-1.5 text-[13px] leading-relaxed text-muted">This question has no test cases. Your code is compared with your teacher's answer.</p>
         ) : (
           <div className="mt-2.5 space-y-3">
-            {tests.map((test, i) =>
-              test.hidden ? null : (
-                <div key={test.id} className="rounded-xl border border-line p-3.5">
-                  <div className="mb-2 text-[13px] font-semibold text-ink">Test {i + 1}</div>
-                  <div className="space-y-2.5">
-                    {test.input && <Block label="Input">{test.input}</Block>}
-                    <Block label="Expected output">{test.output}</Block>
-                  </div>
+            {publicTests.map((test, i) => (
+              <div key={test.id} className="rounded-xl border border-line p-3.5">
+                <div className="mb-2 text-[13px] font-semibold text-ink">Public test {i + 1}</div>
+                <div className="space-y-2.5">
+                  {test.input && <Block label="Input">{test.input}</Block>}
+                  <Block label="Expected output">{test.output}</Block>
                 </div>
-              )
-            )}
-            {hidden > 0 && (
+              </div>
+            ))}
+            {privateCount > 0 && (
               <div className="flex items-start gap-2.5 rounded-xl border border-dashed border-line-strong px-3.5 py-3 text-[13px] leading-relaxed text-muted">
                 <EyeOff className="mt-0.5 h-4 w-4 shrink-0" />
-                {hidden === 1 ? "1 hidden test: you'll see whether it executes, but not what it is." : `${hidden} hidden tests: you'll see whether they execute, but not what they are.`}
+                <span>
+                  {pluralize(privateCount, "private test")} {privateCount === 1 ? "runs" : "run"} every time you press Run. If your code fails one, you'll see its input and expected output.
+                </span>
               </div>
             )}
           </div>
@@ -110,13 +111,45 @@ function QuestionPane({ question, index, total, context, contextOpen, onToggleCo
   );
 }
 
-function CheckResult({ question, run, current, running }) {
+function Outcome({ label, passed, dim }) {
+  return (
+    <li
+      className={cn(
+        "flex items-center gap-2 rounded-lg border px-3 py-2 text-[13px]",
+        passed ? "border-success/30 bg-success-soft text-success-text" : "border-danger/25 bg-danger-soft text-danger-text",
+        dim && "opacity-60"
+      )}
+    >
+      {passed ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}
+      <span className="font-medium">{label}</span>
+      <span className="ml-auto text-xs font-medium">{passed ? "Passed" : "Failed"}</span>
+    </li>
+  );
+}
+
+function Working({ children }) {
+  return (
+    <div className="flex items-center gap-3 text-sm text-ink-2">
+      <Loader2 className="h-4 w-4 animate-spin text-primary-text" />
+      {children}
+    </div>
+  );
+}
+
+/**
+ * The result of a Run. Every test ran in one check; like LeetCode, the public
+ * results show first, then the private ones, with any private test the code
+ * failed shown in full. stage is "running", "private" (still revealing the
+ * private results) or "done".
+ */
+function CheckResult({ question, run, current, stage }) {
   const tests = question.tests || [];
-  if (running) {
+  const publicTests = tests.filter((t) => !t.hidden);
+  const privateTests = tests.filter((t) => t.hidden);
+  if (stage === "running") {
     return (
-      <div className="flex items-center gap-3 px-4 py-4 text-sm text-ink-2">
-        <Loader2 className="h-4 w-4 animate-spin text-primary-text" />
-        Checking your code. This takes a few seconds…
+      <div className="px-4 py-4">
+        <Working>{publicTests.length ? "Running the public test cases…" : tests.length ? "Running the test cases…" : "Comparing your code with your teacher's answer…"}</Working>
       </div>
     );
   }
@@ -125,50 +158,78 @@ function CheckResult({ question, run, current, running }) {
       <div className="flex items-start gap-3 px-4 py-4 text-[13px] leading-relaxed text-muted">
         <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary-text" />
         <span>
-          Press Run to dry-run your code{tests.length ? " against the test cases" : ""}. An AI compares it with your teacher's answer: you'll see how correct it is
-          {tests.length ? " and whether each test would execute" : ""}. It isn't a real compiler, so small syntax slips don't matter, but the logic does.
+          Press Run to dry-run your code{tests.length ? " against every test case, public and private" : ""}. An AI compares it with your teacher's answer and tells you how correct it is. It isn't a real compiler, so small
+          syntax slips don't matter, but the logic does.
         </span>
       </div>
     );
   }
+  const passed = (test) => Boolean((run.tests || []).find((t) => t.id === test.id)?.executes);
+  const revealed = new Map((run.revealed || []).map((t) => [t.id, t]));
+  const publicPassed = publicTests.filter(passed).length;
+  const privatePassed = privateTests.filter(passed).length;
+  const revealing = stage === "private";
   return (
-    <div className="space-y-3 px-4 py-4">
-      <div className="flex items-center gap-4">
-        <div className="text-[28px] font-semibold leading-none tracking-tight text-ink">{run.percent}%</div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-2 text-[13px]">
-            <span className="font-medium text-ink">correct</span>
-            <span className="text-xs text-muted">checked {timeAgo(run.at)}</span>
+    <div className="space-y-4 px-4 py-4">
+      {!revealing && (
+        <div className="flex items-center gap-4">
+          <div className="text-[28px] font-semibold leading-none tracking-tight text-ink">{run.percent}%</div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline justify-between gap-2 text-[13px]">
+              <span className="font-medium text-ink">correct</span>
+              <span className="text-xs text-muted">checked {timeAgo(run.at)}</span>
+            </div>
+            <Meter value={run.percent} tone={scoreTone(run.percent)} label="How correct your code is" className="mt-1.5" />
           </div>
-          <Meter value={run.percent} tone={scoreTone(run.percent)} label="How correct your code is" className="mt-1.5" />
         </div>
-      </div>
-      {!current && (
+      )}
+      {!current && !revealing && (
         <p className="rounded-lg bg-warning-soft px-3 py-2 text-[13px] text-warning-text">Your code or language has changed since this check. Run it again to check this version. Either way, your final code is checked when you submit.</p>
       )}
-      {tests.length > 0 && (
-        <ul className="grid gap-1.5 sm:grid-cols-2">
-          {tests.map((test, i) => {
-            const executes = Boolean((run.tests || []).find((t) => t.id === test.id)?.executes);
-            return (
-              <li
-                key={test.id}
-                className={cn(
-                  "flex items-center gap-2 rounded-lg border px-3 py-2 text-[13px]",
-                  executes ? "border-success/30 bg-success-soft text-success-text" : "border-danger/25 bg-danger-soft text-danger-text",
-                  !current && "opacity-60"
-                )}
-              >
-                {executes ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}
-                <span className="font-medium">
-                  {test.hidden ? "Hidden test" : "Test"} {i + 1}
-                </span>
-                <span className="ml-auto text-xs font-medium">{executes ? "Will execute" : "Won't execute"}</span>
-              </li>
-            );
-          })}
-        </ul>
+      {publicTests.length > 0 && (
+        <section>
+          <h4 className={cn("mb-1.5 text-[13px] font-semibold", publicPassed === publicTests.length ? "text-success-text" : "text-danger-text")}>
+            Public test cases: {publicPassed} of {publicTests.length} passed
+          </h4>
+          <ul className="grid gap-1.5 sm:grid-cols-2">
+            {publicTests.map((test, i) => (
+              <Outcome key={test.id} label={`Public test ${i + 1}`} passed={passed(test)} dim={!current} />
+            ))}
+          </ul>
+        </section>
       )}
+      {privateTests.length > 0 &&
+        (revealing ? (
+          <Working>Running the private test cases…</Working>
+        ) : (
+          <section className="animate-fade-in">
+            <h4 className={cn("mb-1.5 text-[13px] font-semibold", privatePassed === privateTests.length ? "text-success-text" : "text-danger-text")}>
+              Private test cases: {privatePassed} of {privateTests.length} passed
+            </h4>
+            <ul className="grid gap-1.5 sm:grid-cols-2">
+              {privateTests.map((test, i) => (
+                <Outcome key={test.id} label={`Private test ${i + 1}`} passed={passed(test)} dim={!current} />
+              ))}
+            </ul>
+            {privateTests.some((test) => !passed(test) && revealed.has(test.id)) && (
+              <div className="mt-3 space-y-2.5">
+                {privateTests.map((test, i) => {
+                  const shown = !passed(test) && revealed.get(test.id);
+                  if (!shown) return null;
+                  return (
+                    <div key={test.id} className="rounded-xl border border-danger/25 p-3">
+                      <div className="mb-2 text-[13px] font-semibold text-danger-text">Private test {i + 1} failed. Here's what it was:</div>
+                      <div className="space-y-2">
+                        {shown.input && <Block label="Input">{shown.input}</Block>}
+                        <Block label="Expected output">{shown.output}</Block>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        ))}
     </div>
   );
 }
@@ -213,6 +274,9 @@ function ResetButton({ onReset, disabled }) {
 /** An external: code questions, each with an editor and an AI "Run". */
 export default function CodeScreen({ info, state, questions, answers, runs, current, save, stream, offsetRef, onAnswer, onRun, onNavigate, onExpire, onSubmit, onTools, onBlocked }) {
   const [running, setRunning] = useState(null); // id of the question being checked
+  const [revealing, setRevealing] = useState(null); // id of the question whose private results are on their way
+  const revealTimer = useRef(null);
+  useEffect(() => () => clearTimeout(revealTimer.current), []);
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const [contextOpen, setContextOpen] = useState(true);
   const question = questions[current];
@@ -242,7 +306,15 @@ export default function CodeScreen({ info, state, questions, answers, runs, curr
     setRunning(question.id);
     const result = await onRun(question.id, code, question.language === "any" ? language : "");
     setRunning(null);
-    if (result && !result.cached) setCooldownUntil(startedAt + RUN_COOLDOWN_MS);
+    if (!result || result.cached) return;
+    setCooldownUntil(startedAt + RUN_COOLDOWN_MS);
+    // Public results first; the private ones follow a moment later, like LeetCode.
+    if (question.tests?.some((t) => t.hidden)) {
+      const id = question.id;
+      clearTimeout(revealTimer.current);
+      setRevealing(id);
+      revealTimer.current = setTimeout(() => setRevealing((current) => (current === id ? null : current)), 1500);
+    }
   };
 
   const last = current === questions.length - 1;
@@ -310,7 +382,7 @@ export default function CodeScreen({ info, state, questions, answers, runs, curr
 
               <div className="shrink-0 border-t border-line bg-surface">
                 <div className="max-h-[34vh] overflow-y-auto" aria-live="polite">
-                  <CheckResult question={question} run={run} current={upToDate} running={running === question.id} />
+                  <CheckResult question={question} run={run} current={upToDate} stage={running === question.id ? "running" : revealing === question.id ? "private" : "done"} />
                 </div>
                 <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3">
                   <RunButton onRun={runNow} running={running === question.id} cooldownUntil={cooldownUntil} disabled={Boolean(running) || (checksLeft === 0 && !upToDate)} />

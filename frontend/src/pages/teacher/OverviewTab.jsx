@@ -55,7 +55,7 @@ export default function OverviewTab() {
         <Card>
           <CardHeader
             icon={ListChecks}
-            title="Setup"
+            title="Setup" info="What's left before the exam can start. Click a line to go and finish it."
             description={done === readiness.length ? "Everything is ready. Start the exam when your students are seated." : `${done} of ${readiness.length} done`}
           />
           <ul className="divide-y divide-line">
@@ -76,22 +76,22 @@ export default function OverviewTab() {
         </Card>
 
         <div className="grid grid-cols-3 gap-3">
-          <StatTile label="Started" value={stats.started} hint={`of ${exam.allowed_students.length}`} />
-          <StatTile label="Writing" value={stats.in_progress} />
-          <StatTile label="Submitted" value={stats.submitted} />
+          <StatTile label="Started" info="Students who have opened their paper, out of everyone on the student list." value={stats.started} hint={`of ${exam.allowed_students.length}`} />
+          <StatTile label="Writing" info="Students who have started and haven't submitted yet." value={stats.in_progress} />
+          <StatTile label="Submitted" info="Answer sheets handed in, by the student or automatically." value={stats.submitted} />
         </div>
       </div>
 
       <div className="space-y-6">
         <Card>
-          <CardHeader icon={KeyRound} title="Teacher codes" description="Type these on a student's laptop during invigilation." />
+          <CardHeader icon={KeyRound} title="Teacher codes" info="The copy code unlocks a student whose paper locked. The refresh code gives a student a new set and clears their answers. Type them on the student's laptop yourself; don't read them out." description="Type these on a student's laptop during invigilation." />
           <div className="p-5">
             <TeacherCodes settings={s} onRegenerate={regenerate} busy={busy} />
           </div>
         </Card>
 
         <Card>
-          <CardHeader title={`How this ${exam.type} runs`} />
+          <CardHeader title={`How this ${exam.type} runs`} info="A summary of this exam's settings. Change them on the Settings tab." />
           <dl className="divide-y divide-line text-sm">
             {rows.map(({ icon: Icon, label, value }) => (
               <div key={label} className="flex items-start gap-3 px-5 py-3">
