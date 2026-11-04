@@ -34,7 +34,7 @@ func TestGradeSingle(t *testing.T) {
 		{nil, ResultUnanswered, 0},
 	}
 	for _, c := range cases {
-		r := GradeQuestion(q, Answer{Selected: c.selected}, MultiStrict)
+		r := GradeQuestion(q, Answer{Selected: c.selected}, nil, MultiStrict)
 		if r.Status != c.status || r.Awarded != c.awarded || r.Max != 2 {
 			t.Errorf("selected %v: got %s %.2f, want %s %.2f", c.selected, r.Status, r.Awarded, c.status, c.awarded)
 		}
@@ -59,11 +59,11 @@ func TestGradeMultiStrictAndNet(t *testing.T) {
 		{[]int{2, 2, 2}, ResultPartial, 1, 1, ResultPartial},  // duplicates count once
 	}
 	for _, c := range cases {
-		strict := GradeQuestion(q, Answer{Selected: c.selected}, MultiStrict)
+		strict := GradeQuestion(q, Answer{Selected: c.selected}, nil, MultiStrict)
 		if strict.Status != c.strictStatus || strict.Awarded != c.strictAwarded {
 			t.Errorf("strict %v: got %s %.2f, want %s %.2f", c.selected, strict.Status, strict.Awarded, c.strictStatus, c.strictAwarded)
 		}
-		net := GradeQuestion(q, Answer{Selected: c.selected}, MultiNet)
+		net := GradeQuestion(q, Answer{Selected: c.selected}, nil, MultiNet)
 		if net.Awarded != c.netAwarded || net.Status != c.netStatusAfter {
 			t.Errorf("net %v: got %s %.2f, want %s %.2f", c.selected, net.Status, net.Awarded, c.netStatusAfter, c.netAwarded)
 		}
@@ -79,7 +79,7 @@ func TestGradeFill(t *testing.T) {
 		"stack pointer":   ResultWrong,
 		"   ":             ResultUnanswered,
 	} {
-		if got := GradeQuestion(q, Answer{Text: text}, MultiStrict).Status; got != want {
+		if got := GradeQuestion(q, Answer{Text: text}, nil, MultiStrict).Status; got != want {
 			t.Errorf("%q: got %s, want %s", text, got, want)
 		}
 	}
@@ -99,14 +99,14 @@ func TestGradeAttemptTotals(t *testing.T) {
 			"qc": {Selected: []int{1}},
 		},
 	}
-	score, maxScore, results := GradeAttempt(questionMap(e), att, MultiStrict)
+	score, maxScore, results, _ := GradeAttempt(questionMap(e), att, MultiStrict)
 	if score != 4 || maxScore != 5 || len(results) != 3 {
 		t.Fatalf("got %.2f / %.2f with %d results, want 4 / 5 with 3", score, maxScore, len(results))
 	}
 }
 
 func TestCleanQuestion(t *testing.T) {
-	q, err := cleanQuestion(Question{Type: "MCQ_SINGLE", Text: "  Pick  ", Options: []string{"a", " ", "b", "c"}, Correct: []int{2}, Difficulty: "Hard"})
+	q, err := cleanQuestion(Question{Type: "MCQ_SINGLE", Text: "  Pick  ", Options: []string{"a", " ", "b", "c"}, Correct: []int{2}, Difficulty: "Hard"}, TypeViva)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,12 +125,12 @@ func TestCleanQuestion(t *testing.T) {
 		{Type: QFill, Text: "bad difficulty", Answers: []string{"x"}, Difficulty: "tricky"},
 	}
 	for _, b := range bad {
-		if _, err := cleanQuestion(b); err == nil {
+		if _, err := cleanQuestion(b, TypeViva); err == nil {
 			t.Errorf("expected an error for %q", b.Text)
 		}
 	}
 
-	fill, err := cleanQuestion(Question{Type: QFill, Text: "f", Answers: []string{"RAM", "ram ", "Random Access Memory"}})
+	fill, err := cleanQuestion(Question{Type: QFill, Text: "f", Answers: []string{"RAM", "ram ", "Random Access Memory"}}, TypeViva)
 	if err != nil || len(fill.Answers) != 2 {
 		t.Fatalf("answers that normalize the same should merge: %+v %v", fill.Answers, err)
 	}

@@ -4,7 +4,23 @@ export const QUESTION_TYPES = {
   mcq_single: { label: "Single correct", short: "Single" },
   mcq_multi: { label: "Multiple correct", short: "Multiple" },
   fill: { label: "Fill in the blank", short: "Fill blank" },
+  descriptive: { label: "Question", short: "Question" },
+  code: { label: "Code", short: "Code" },
 };
+
+// Languages a code question can be answered in; "any" lets the student pick.
+export const LANGUAGES = {
+  sql: "SQL",
+  python: "Python",
+  c: "C",
+  cpp: "C++",
+  java: "Java",
+  javascript: "JavaScript",
+  php: "PHP",
+  other: "Other",
+};
+
+export const languageLabel = (language) => (language === "any" ? "Any language" : LANGUAGES[language] || language);
 
 export const DIFFICULTY = {
   easy: { label: "Easy", tone: "success" },
@@ -108,5 +124,5 @@ export function scoreTone(percent) {
 }
 
 export function isAnswered(answer) {
-  return Boolean(answer && ((answer.selected?.length ?? 0) > 0 || (answer.text ?? "").trim() !== ""));
+  return Boolean(answer && ((answer.selected?.length ?? 0) > 0 || (answer.text ?? "").trim() !== "" || (answer.code ?? "").trim() !== ""));
 }

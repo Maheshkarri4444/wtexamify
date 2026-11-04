@@ -43,6 +43,9 @@ type requirements struct {
 	Fullscreen           bool `json:"fullscreen"`
 	ScreenShare          bool `json:"screen_share"`
 	BlockExtendedDisplay bool `json:"block_extended_display"`
+	LockOnLeave          bool `json:"lock_on_leave"`
+	BlockClipboard       bool `json:"block_clipboard"`
+	LockOnRejoin         bool `json:"lock_on_rejoin"`
 }
 
 type studentExamInfo struct {
@@ -51,9 +54,11 @@ type studentExamInfo struct {
 	Type             string             `json:"type"`
 	Status           string             `json:"status"`
 	Instructions     string             `json:"instructions"`
+	Context          string             `json:"context"`
 	DurationMinutes  int                `json:"duration_minutes"`
 	QuestionsPerSet  int                `json:"questions_per_set"`
 	MaxViolations    int                `json:"max_violations"`
+	MaxRuns          int                `json:"max_runs"`
 	ResultVisibility string             `json:"result_visibility"`
 	Requirements     requirements       `json:"requirements"`
 	LiveAt           *time.Time         `json:"live_at"`
@@ -67,6 +72,7 @@ type attemptSummary struct {
 	Score       *float64           `json:"score"`
 	MaxScore    *float64           `json:"max_score"`
 	Percent     *float64           `json:"percent"`
+	Grading     string             `json:"grading,omitempty"`
 }
 
 type reviewItem struct {
@@ -81,6 +87,13 @@ type reviewItem struct {
 	Status     string        `json:"status"`
 	Awarded    float64       `json:"awarded"`
 	Max        float64       `json:"max"`
+	// Code questions.
+	Language string        `json:"language,omitempty"`
+	Code     string        `json:"code,omitempty"`
+	Solution string        `json:"solution,omitempty"`
+	Percent  *int          `json:"percent,omitempty"`
+	Tests    []PaperTest   `json:"tests,omitempty"`
+	Outcomes []TestOutcome `json:"outcomes,omitempty"`
 }
 
 type studentResult struct {
@@ -109,11 +122,12 @@ type attemptState struct {
 	CodeBlockedUntil *time.Time         `json:"code_blocked_until"`
 	SubmittedAt      *time.Time         `json:"submitted_at"`
 	SubmitReason     string             `json:"submit_reason"`
+	Grading          string             `json:"grading"`
 	Result           *studentResult     `json:"result"`
 }
 
 func infoFor(e *Exam) studentExamInfo {
-	return studentExamInfo{
+	info := studentExamInfo{
 		ID: e.ID, Title: e.Title, Type: e.Type, Status: e.Status, Instructions: e.Instructions,
 		DurationMinutes: e.DurationMinutes, QuestionsPerSet: e.Blueprint.PerSet,
 		MaxViolations: e.Settings.MaxViolations, ResultVisibility: e.Settings.ResultVisibility,
@@ -121,17 +135,26 @@ func infoFor(e *Exam) studentExamInfo {
 			Fullscreen:           e.Settings.RequireFullscreen,
 			ScreenShare:          e.Settings.RequireScreenShare,
 			BlockExtendedDisplay: e.Settings.BlockExtendedDisplay,
+			LockOnLeave:          !e.Settings.AllowLeaving,
+			BlockClipboard:       !e.Settings.AllowClipboard,
+			LockOnRejoin:         e.Settings.LockOnRejoin,
 		},
 		LiveAt: e.LiveAt,
 	}
+	if e.Type == TypeExternal {
+		info.Context, info.MaxRuns = e.Context, e.Settings.MaxRuns
+	}
+	return info
 }
 
 func summaryFor(e *Exam, att *Attempt) *attemptSummary {
 	if att == nil {
 		return nil
 	}
-	summary := &attemptSummary{ID: att.ID, Status: att.Status, Locked: att.Locked, SubmittedAt: att.SubmittedAt}
-	if att.Status == AttemptSubmitted && e.Settings.ResultVisibility != VisibilityNone {
+	summary := &attemptSummary{ID: att.ID, Status: att.Status, Locked: att.Locked, SubmittedAt: att.SubmittedAt, Grading: att.Grading}
+	// An internal isn't marked here, and an external's score isn't final until the AI is done.
+	final := e.Type != TypeInternal && (att.Grading == "" || att.Grading == GradingDone)
+	if att.Status == AttemptSubmitted && e.Settings.ResultVisibility != VisibilityNone && final {
 		score, maxScore, pct := att.Score, att.MaxScore, percent(att.Score, att.MaxScore)
 		summary.Score, summary.MaxScore, summary.Percent = &score, &maxScore, &pct
 	}
@@ -148,11 +171,15 @@ func stateFor(e *Exam, att *Attempt) attemptState {
 		AnsweredCount: att.AnsweredCount, Total: len(att.QuestionIDs),
 		StartedAt: att.StartedAt, DeadlineAt: att.DeadlineAt, ServerNow: time.Now(),
 		CodeBlockedUntil: att.CodeBlockedUntil, SubmittedAt: att.SubmittedAt, SubmitReason: att.SubmitReason,
+		Grading: att.Grading,
 	}
 	if att.Status != AttemptSubmitted {
 		return state
 	}
 	result := &studentResult{Visibility: e.Settings.ResultVisibility, Review: []reviewItem{}}
+	if e.Type == TypeInternal {
+		result.Visibility = VisibilityNone
+	}
 	if result.Visibility != VisibilityNone {
 		score, maxScore, pct := att.Score, att.MaxScore, percent(att.Score, att.MaxScore)
 		result.Score, result.MaxScore, result.Percent = &score, &maxScore, &pct
@@ -171,11 +198,18 @@ func stateFor(e *Exam, att *Attempt) attemptState {
 			if selected == nil {
 				selected = []int{}
 			}
-			result.Review = append(result.Review, reviewItem{
+			item := reviewItem{
 				Number: pq.Number, Type: pq.Type, Text: pq.Text, Options: pq.Options,
 				Selected: selected, AnswerText: answer.Text, Correct: q.Correct, Accepted: q.Answers,
 				Status: r.Status, Awarded: r.Awarded, Max: r.Max,
-			})
+			}
+			if q.Type == QCode {
+				item.Language, item.Code, item.Solution, item.Percent, item.Tests = answerLanguage(q, answer), answer.Code, q.Solution, r.Percent, pq.Tests
+				if run, ok := att.Runs[pq.ID]; ok && run.CodeHash == codeHash(answerLanguage(q, answer), answer.Code) {
+					item.Outcomes = run.Tests
+				}
+			}
+			result.Review = append(result.Review, item)
 		}
 	}
 	state.Result = result
@@ -191,7 +225,7 @@ func respondPaper(c *gin.Context, e *Exam, att *Attempt) {
 	if answers == nil {
 		answers = map[string]Answer{}
 	}
-	c.JSON(http.StatusOK, gin.H{"exam": infoFor(e), "state": stateFor(e, att), "questions": questions, "answers": answers})
+	c.JSON(http.StatusOK, gin.H{"exam": infoFor(e), "state": stateFor(e, att), "questions": questions, "answers": answers, "runs": runViews(e, att)})
 }
 
 func findExam(ctx context.Context, filter bson.M, projection bson.M) (*Exam, error) {
@@ -359,7 +393,7 @@ func startAttempt(c *gin.Context) {
 	att := Attempt{
 		ID: primitive.NewObjectID(), ExamID: exam.ID, StudentEmail: user.Email, StudentName: user.Name,
 		SetNumber: setNumber, QuestionIDs: ids, OptionOrder: order, PaperVersion: 1,
-		Answers: map[string]Answer{}, Status: AttemptInProgress,
+		Answers: map[string]Answer{}, Runs: map[string]RunResult{}, Overrides: map[string]float64{}, Status: AttemptInProgress,
 		StartedAt: now, DeadlineAt: now.Add(time.Duration(exam.DurationMinutes) * time.Minute), LastSeenAt: now,
 		Results: []QuestionResult{}, Events: []Event{{At: now, Type: "started", Detail: fmt.Sprintf("Set %d", setNumber)}},
 		UserAgent: truncateRunes(c.Request.UserAgent(), 300),
@@ -548,8 +582,17 @@ func attemptEvent(c *gin.Context) {
 		respondErr(c, newError(http.StatusBadRequest, "Unknown event."))
 		return
 	}
-	if att.Locked {
+	lite, err := findExam(ctx, bson.M{"_id": att.ExamID}, liteExamProjection)
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	leaving := req.Type == "tab_hidden" || req.Type == "window_blur"
+	if att.Locked || (leaving && lite.Settings.AllowLeaving) {
 		event.Detail = "while already locked"
+		if !att.Locked {
+			event.Detail = "allowed for this exam"
+		}
 		_, err = attemptsCol().UpdateOne(ctx, bson.M{"_id": att.ID}, bson.M{"$push": bson.M{"events": eventPush(event)}})
 		if err != nil {
 			respondErr(c, err)
@@ -579,18 +622,20 @@ func attemptEvent(c *gin.Context) {
 	att.Locked, att.LockReason = true, reason
 	att.Violations++
 
-	exam, err := loadExamByID(ctx, att.ExamID)
-	if err != nil {
-		respondErr(c, err)
-		return
-	}
-	if limit := exam.Settings.MaxViolations; limit > 0 && att.Violations >= limit {
+	if limit := lite.Settings.MaxViolations; limit > 0 && att.Violations >= limit {
+		exam, err := loadExamByID(ctx, att.ExamID)
+		if err != nil {
+			respondErr(c, err)
+			return
+		}
 		if err := finalizeAttempts(ctx, exam, []*Attempt{att}, "violations"); err != nil {
 			respondErr(c, err)
 			return
 		}
+		c.JSON(http.StatusOK, gin.H{"state": stateFor(exam, att)})
+		return
 	}
-	c.JSON(http.StatusOK, gin.H{"state": stateFor(exam, att)})
+	c.JSON(http.StatusOK, gin.H{"state": stateFor(lite, att)})
 }
 
 // checkCode applies the wrong-code limit. It returns a ready-to-send error when
@@ -702,7 +747,7 @@ func refreshAttempt(c *gin.Context) {
 	_, err = attemptsCol().UpdateOne(ctx, bson.M{"_id": att.ID, "status": AttemptInProgress}, bson.M{
 		"$set": bson.M{
 			"set_number": next, "question_ids": ids, "option_order": order,
-			"answers": map[string]Answer{}, "answered_count": 0,
+			"answers": map[string]Answer{}, "answered_count": 0, "runs": map[string]RunResult{},
 			"locked": false, "lock_reason": "", "code_failures": 0, "code_blocked_until": nil, "last_seen_at": now,
 		},
 		"$inc":  bson.M{"paper_version": 1, "refreshes": 1},

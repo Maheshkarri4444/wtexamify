@@ -1,0 +1,234 @@
+package exams
+
+import (
+	"context"
+	"errors"
+	"log"
+	"math"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
+)
+
+const (
+	// A student waits this long between checks, so one exam hall can't flood the API.
+	runCooldown = 5 * time.Second
+	runTimeout  = 75 * time.Second
+)
+
+// runView is a check result as the student sees it.
+type runView struct {
+	QuestionID string        `json:"question_id"`
+	Language   string        `json:"language"`
+	Percent    int           `json:"percent"`
+	Tests      []TestOutcome `json:"tests"`
+	Count      int           `json:"count"`
+	At         time.Time     `json:"at"`
+	Current    bool          `json:"current"` // false once the code has changed since this check
+}
+
+func viewRun(qid string, run RunResult, answer Answer, q Question) runView {
+	tests := run.Tests
+	if tests == nil {
+		tests = []TestOutcome{}
+	}
+	current := strings.TrimSpace(answer.Code) != "" && run.CodeHash == codeHash(answerLanguage(q, answer), answer.Code)
+	return runView{QuestionID: qid, Language: run.Language, Percent: run.Percent, Tests: tests, Count: run.Count, At: run.At, Current: current}
+}
+
+func runViews(e *Exam, att *Attempt) map[string]runView {
+	views := map[string]runView{}
+	byID := questionMap(e)
+	for qid, run := range att.Runs {
+		if q, ok := byID[qid]; ok {
+			views[qid] = viewRun(qid, run, att.Answers[qid], q)
+		}
+	}
+	return views
+}
+
+func aiErrorResponse(err error) error {
+	log.Println("ai check failed:", err)
+	if errors.Is(err, errAINotConfigured) {
+		return newError(http.StatusServiceUnavailable, "Code checking isn't set up on the server yet (GEMINI_API_KEY is missing).")
+	}
+	var busy *aiBusyError
+	if errors.As(err, &busy) && busy.wait > 0 {
+		return newError(http.StatusServiceUnavailable, "The AI checker is busy. Your answer is saved; try again in about %d seconds.", int(math.Ceil(busy.wait.Seconds())))
+	}
+	return newError(http.StatusServiceUnavailable, "Couldn't check the code right now: the AI checker is busy. Your answer is saved; try again in a moment.")
+}
+
+// runCode saves a student's code and has the AI check it: how correct it is,
+// and whether each test case would execute.
+func runCode(c *gin.Context) {
+	var req struct {
+		QuestionID string `json:"question_id"`
+		Code       string `json:"code"`
+		Language   string `json:"language"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondErr(c, newError(http.StatusBadRequest, "Invalid request body."))
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
+	att, err := loadMyAttempt(ctx, c)
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	if att.Status != AttemptInProgress {
+		respondErr(c, newError(http.StatusConflict, "This exam has already been submitted."))
+		return
+	}
+	if att.Locked {
+		respondErr(c, newError(http.StatusConflict, "Your exam is locked. Ask your teacher to unlock it."))
+		return
+	}
+	exam, err := loadExamByID(ctx, att.ExamID)
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	q, known := questionMap(exam)[req.QuestionID]
+	if !known || !paperHas(att, req.QuestionID) || q.Type != QCode {
+		respondErr(c, newError(http.StatusBadRequest, "This question can't be run."))
+		return
+	}
+	if runeLen(req.Code) > maxCodeLength {
+		respondErr(c, newError(http.StatusBadRequest, "Your code is longer than %d characters.", maxCodeLength))
+		return
+	}
+
+	answer := att.Answers[req.QuestionID]
+	answer.Code = req.Code
+	if q.Language == LangAny {
+		if _, ok := languages[req.Language]; !ok {
+			respondErr(c, newError(http.StatusBadRequest, "Pick the language you're writing in."))
+			return
+		}
+		answer.Language = req.Language
+	}
+	language := answerLanguage(q, answer)
+	if att.Answers == nil {
+		att.Answers = map[string]Answer{}
+	}
+	att.Answers[req.QuestionID] = answer
+	att.AnsweredCount = countAnswered(att.Answers)
+	saveAnswer := bson.M{"answers." + req.QuestionID: answer, "answered_count": att.AnsweredCount, "last_seen_at": time.Now()}
+	inProgress := bson.M{"_id": att.ID, "status": AttemptInProgress}
+
+	if strings.TrimSpace(req.Code) == "" {
+		respondErr(c, newError(http.StatusBadRequest, "Write some code first."))
+		return
+	}
+	hash := codeHash(language, req.Code)
+	previous, hasPrevious := att.Runs[req.QuestionID]
+	if hasPrevious && previous.CodeHash == hash {
+		// Same code as last time: the same verdict, without spending a check.
+		if _, err := attemptsCol().UpdateOne(ctx, inProgress, bson.M{"$set": saveAnswer}); err != nil {
+			respondErr(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"run": viewRun(req.QuestionID, previous, answer, q), "cached": true, "max_runs": exam.Settings.MaxRuns})
+		return
+	}
+	if limit := exam.Settings.MaxRuns; limit > 0 && previous.Count >= limit {
+		_, _ = attemptsCol().UpdateOne(ctx, inProgress, bson.M{"$set": saveAnswer})
+		respondErr(c, newError(http.StatusTooManyRequests, "You've used all %d checks for this question. Your answer is saved and will still be checked when you submit.", limit))
+		return
+	}
+	// Save the code and claim a check in one write. The filter only matches when
+	// the last check was long enough ago, so a double click can't start two.
+	now := time.Now()
+	saveAnswer["last_run_at"] = now
+	claim := bson.M{"_id": att.ID, "status": AttemptInProgress, "$or": bson.A{
+		bson.M{"last_run_at": bson.M{"$exists": false}},
+		bson.M{"last_run_at": nil},
+		bson.M{"last_run_at": bson.M{"$lt": now.Add(-runCooldown)}},
+	}}
+	claimed, err := attemptsCol().UpdateOne(ctx, claim, bson.M{"$set": saveAnswer})
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	if claimed.MatchedCount == 0 {
+		delete(saveAnswer, "last_run_at")
+		_, _ = attemptsCol().UpdateOne(ctx, inProgress, bson.M{"$set": saveAnswer})
+		respondErr(c, newError(http.StatusTooManyRequests, "Wait a few seconds between checks."))
+		return
+	}
+
+	verdict, err := checkWithAI(ctx, q, language, req.Code, exam.Context)
+	if err != nil {
+		respondErr(c, aiErrorResponse(err))
+		return
+	}
+	run := RunResult{CodeHash: hash, Language: language, Percent: verdict.Percent, Tests: verdict.Tests, At: time.Now(), Count: previous.Count + 1, Model: verdict.Model}
+	res, err := attemptsCol().UpdateOne(ctx, inProgress, bson.M{"$set": bson.M{"runs." + req.QuestionID: run}, "$inc": bson.M{"run_count": 1}})
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	if res.MatchedCount == 0 {
+		respondErr(c, newError(http.StatusConflict, "This exam was submitted while your code was being checked."))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"run": viewRun(req.QuestionID, run, answer, q), "cached": false, "max_runs": exam.Settings.MaxRuns})
+}
+
+func paperHas(att *Attempt, questionID string) bool {
+	for _, id := range att.QuestionIDs {
+		if id == questionID {
+			return true
+		}
+	}
+	return false
+}
+
+// checkQuestion lets a teacher try an answer (by default their own) against a
+// question before the exam, to see how the AI judges it.
+func checkQuestion(c *gin.Context) {
+	var req struct {
+		Question Question `json:"question"`
+		Code     string   `json:"code"`
+		Language string   `json:"language"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondErr(c, newError(http.StatusBadRequest, "Invalid request body."))
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
+	exam, err := loadOwnedExam(ctx, c)
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	q, err := cleanQuestion(req.Question, TypeExternal)
+	if err != nil {
+		respondErr(c, newError(http.StatusBadRequest, "%s", err.Error()))
+		return
+	}
+	code := req.Code
+	if strings.TrimSpace(code) == "" {
+		code = q.Solution
+	}
+	language := q.Language
+	if language == LangAny {
+		language = req.Language
+		if _, ok := languages[language]; !ok {
+			language = "other"
+		}
+	}
+	verdict, err := checkWithAI(ctx, q, language, code, exam.Context)
+	if err != nil {
+		respondErr(c, aiErrorResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"percent": verdict.Percent, "tests": verdict.Tests, "model": verdict.Model})
+}

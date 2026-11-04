@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -41,6 +42,8 @@ type monitorRow struct {
 	Score           *float64    `json:"score"`
 	MaxScore        *float64    `json:"max_score"`
 	Percent         *float64    `json:"percent"`
+	Runs            int         `json:"runs"`
+	Grading         string      `json:"grading"`
 }
 
 func studentNames(ctx context.Context, emails []string) map[string]string {
@@ -91,6 +94,7 @@ func rowFor(email, name string, set int, allowed bool, att *Attempt, now time.Ti
 	row.Flags = att.Flags
 	row.StartedAt, row.DeadlineAt, row.LastSeenAt = &att.StartedAt, &att.DeadlineAt, &att.LastSeenAt
 	row.SubmittedAt, row.SubmitReason = att.SubmittedAt, att.SubmitReason
+	row.Runs, row.Grading = att.RunCount, att.Grading
 	row.Online = att.Status == AttemptInProgress && now.Sub(att.LastSeenAt) < offlineAfter
 	if att.Status == AttemptSubmitted {
 		score, maxScore, pct := att.Score, att.MaxScore, percent(att.Score, att.MaxScore)
@@ -172,9 +176,14 @@ type questionStats struct {
 	Partial      int      `json:"partial"`
 	Wrong        int      `json:"wrong"`
 	Unanswered   int      `json:"unanswered"`
+	Pending      int      `json:"pending"` // code answers the AI hasn't checked yet
 	AvgAwarded   float64  `json:"avg_awarded"`
 	OptionCounts []int    `json:"option_counts"`
+	Language     string   `json:"language,omitempty"`
+	AvgPercent   *float64 `json:"avg_percent"` // code questions: mean AI correctness
 	awardedSum   float64
+	percentSum   float64
+	percentCount int
 }
 
 // results lists every attempt with its score, plus how each question performed.
@@ -196,7 +205,7 @@ func results(c *gin.Context) {
 	ordered := []*questionStats{}
 	for i, q := range exam.Questions {
 		s := &questionStats{ID: q.ID, Number: i + 1, Type: q.Type, Text: q.Text, Difficulty: q.Difficulty, Marks: q.Marks,
-			Options: q.Options, Correct: q.Correct, Answers: q.Answers, OptionCounts: make([]int, len(q.Options))}
+			Options: q.Options, Correct: q.Correct, Answers: q.Answers, OptionCounts: make([]int, len(q.Options)), Language: q.Language}
 		stats[q.ID] = s
 		ordered = append(ordered, s)
 	}
@@ -218,6 +227,10 @@ func results(c *gin.Context) {
 			}
 			s.Shown++
 			s.awardedSum += r.Awarded
+			if r.Percent != nil {
+				s.percentSum += float64(*r.Percent)
+				s.percentCount++
+			}
 			switch r.Status {
 			case ResultCorrect:
 				s.CorrectCount++
@@ -225,6 +238,9 @@ func results(c *gin.Context) {
 				s.Partial++
 			case ResultWrong:
 				s.Wrong++
+			case ResultPending:
+				s.Pending++
+			case ResultNotGraded:
 			default:
 				s.Unanswered++
 			}
@@ -238,6 +254,10 @@ func results(c *gin.Context) {
 	for _, s := range ordered {
 		if s.Shown > 0 {
 			s.AvgAwarded = round2(s.awardedSum / float64(s.Shown))
+		}
+		if s.percentCount > 0 {
+			avg := round2(s.percentSum / float64(s.percentCount))
+			s.AvgPercent = &avg
 		}
 		if s.Options == nil {
 			s.Options = []string{}
@@ -304,6 +324,26 @@ type reviewQuestion struct {
 	Status       string   `json:"status"`
 	Awarded      float64  `json:"awarded"`
 	Max          float64  `json:"max"`
+	Auto         float64  `json:"auto"`
+	Overridden   bool     `json:"overridden"`
+	// Code questions.
+	Language    string      `json:"language,omitempty"`
+	Code        string      `json:"code,omitempty"`
+	Solution    string      `json:"solution,omitempty"`
+	StarterCode string      `json:"starter_code,omitempty"`
+	TestCases   []TestCase  `json:"test_cases,omitempty"`
+	Percent     *int        `json:"percent"`
+	Run         *runSummary `json:"run"`
+}
+
+// runSummary is the latest AI check of a student's code, for the teacher.
+type runSummary struct {
+	Percent int           `json:"percent"`
+	Tests   []TestOutcome `json:"tests"`
+	Count   int           `json:"count"`
+	At      time.Time     `json:"at"`
+	Current bool          `json:"current"` // false if the student changed the code after this check
+	Model   string        `json:"model"`
 }
 
 // attemptDetail is one student's paper with their answers against the key.
@@ -332,10 +372,18 @@ func attemptDetail(c *gin.Context) {
 			continue
 		}
 		answer := att.Answers[id]
+		var run *RunResult
+		if r, ok := att.Runs[id]; ok {
+			run = &r
+		}
 		result, graded := stored[id]
 		if !graded {
 			// Still writing: show how the answers would score right now.
-			result = GradeQuestion(q, answer, exam.Settings.MultiScoring)
+			result = GradeQuestion(q, answer, run, exam.Settings.MultiScoring)
+			result.Auto = result.Awarded
+			if marks, ok := att.Overrides[id]; ok {
+				result.Awarded, result.Overridden = marks, true
+			}
 		}
 		selected := answer.Selected
 		if selected == nil {
@@ -345,19 +393,89 @@ func attemptDetail(c *gin.Context) {
 		if order == nil {
 			order = []int{}
 		}
-		items = append(items, reviewQuestion{
+		item := reviewQuestion{
 			Number: i + 1, ID: id, Type: q.Type, Text: q.Text, Difficulty: q.Difficulty,
 			Options: q.Options, DisplayOrder: order, Correct: q.Correct, Accepted: q.Answers,
 			Selected: selected, AnswerText: answer.Text, Marked: answer.Marked,
-			Status: result.Status, Awarded: result.Awarded, Max: result.Max,
-		})
+			Status: result.Status, Awarded: result.Awarded, Max: result.Max, Auto: result.Auto, Overridden: result.Overridden,
+			Percent: result.Percent,
+		}
+		if q.Type == QCode {
+			item.Language, item.Code, item.Solution, item.StarterCode, item.TestCases = answerLanguage(q, answer), answer.Code, q.Solution, q.StarterCode, q.TestCases
+			if run != nil {
+				item.Run = &runSummary{Percent: run.Percent, Tests: run.Tests, Count: run.Count, At: run.At, Model: run.Model,
+					Current: run.CodeHash == codeHash(answerLanguage(q, answer), answer.Code)}
+			}
+		}
+		items = append(items, item)
 	}
 	now := time.Now()
 	row := rowFor(att.StudentEmail, att.StudentName, att.SetNumber, true, att, now)
 	if att.Events == nil {
 		att.Events = []Event{}
 	}
-	c.JSON(http.StatusOK, gin.H{"student": row, "events": att.Events, "items": items, "user_agent": att.UserAgent})
+	c.JSON(http.StatusOK, gin.H{"student": row, "events": att.Events, "items": items, "user_agent": att.UserAgent, "grading": att.Grading})
+}
+
+// setMarks lets the teacher replace the automatic marks for one answer (or
+// clear their override with marks: null). The total is recalculated.
+func setMarks(c *gin.Context) {
+	var req struct {
+		QuestionID string   `json:"question_id"`
+		Marks      *float64 `json:"marks"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondErr(c, newError(http.StatusBadRequest, "Invalid request body."))
+		return
+	}
+	ctx, cancel := dbCtx()
+	defer cancel()
+	exam, err := loadOwnedExam(ctx, c)
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	att, err := loadAttemptForExam(ctx, exam.ID, c)
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	byID := questionMap(exam)
+	q, ok := byID[req.QuestionID]
+	if !ok || !paperHas(att, req.QuestionID) {
+		respondErr(c, newError(http.StatusBadRequest, "That question isn't on this student's paper."))
+		return
+	}
+	if q.Type == QDescriptive {
+		respondErr(c, newError(http.StatusBadRequest, "Internal questions aren't marked in Examify."))
+		return
+	}
+	if att.Overrides == nil {
+		att.Overrides = map[string]float64{}
+	}
+	if req.Marks == nil {
+		delete(att.Overrides, req.QuestionID)
+	} else {
+		if *req.Marks < 0 || *req.Marks > q.Marks {
+			respondErr(c, newError(http.StatusBadRequest, "Marks must be between 0 and %s.", formatMarks(q.Marks)))
+			return
+		}
+		att.Overrides[req.QuestionID] = round2(*req.Marks)
+	}
+	set := bson.M{"overrides": att.Overrides}
+	if att.Status == AttemptSubmitted {
+		score, maxScore, results, _ := GradeAttempt(byID, att, exam.Settings.MultiScoring)
+		set["score"], set["max_score"], set["results"] = score, maxScore, results
+	}
+	if _, err := attemptsCol().UpdateOne(ctx, bson.M{"_id": att.ID}, bson.M{"$set": set}); err != nil {
+		respondErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func formatMarks(v float64) string {
+	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
 // attemptAction lets the teacher help or act on one student from the dashboard.
@@ -382,6 +500,23 @@ func attemptAction(c *gin.Context) {
 		respondErr(c, err)
 		return
 	}
+	if req.Action == "regrade" {
+		// Check every code answer again from scratch, for example after the AI was down.
+		if exam.Type != TypeExternal || att.Status != AttemptSubmitted {
+			respondErr(c, newError(http.StatusBadRequest, "Only submitted external exams can be checked again."))
+			return
+		}
+		_, err := attemptsCol().UpdateOne(ctx, bson.M{"_id": att.ID, "status": AttemptSubmitted}, bson.M{"$set": bson.M{
+			"runs": map[string]RunResult{}, "grading": GradingPending, "grading_tries": 0,
+		}})
+		if err != nil {
+			respondErr(c, err)
+			return
+		}
+		queueGrading(att.ID)
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+		return
+	}
 	if att.Status != AttemptInProgress {
 		respondErr(c, newError(http.StatusConflict, "This student has already submitted."))
 		return
@@ -402,7 +537,7 @@ func attemptAction(c *gin.Context) {
 		update = bson.M{
 			"$set": bson.M{
 				"set_number": next, "question_ids": ids, "option_order": order,
-				"answers": map[string]Answer{}, "answered_count": 0, "locked": false, "lock_reason": "",
+				"answers": map[string]Answer{}, "answered_count": 0, "runs": map[string]RunResult{}, "locked": false, "lock_reason": "",
 			},
 			"$inc":  bson.M{"paper_version": 1, "refreshes": 1},
 			"$push": bson.M{"events": eventPush(Event{At: now, Type: "teacher_new_set", Detail: setChange(att.SetNumber, next)})},

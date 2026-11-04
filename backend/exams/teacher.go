@@ -14,7 +14,13 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-const defaultVivaInstructions = "Answer every question before the timer runs out. Single-correct questions have exactly one right option. Multiple-correct questions can have more than one, and a wrong tick costs you that question. Fill-in-the-blank answers ignore capital letters and spaces. Stay in fullscreen and on this tab the whole time: leaving locks your exam until your teacher unlocks it."
+var defaultInstructions = map[string]string{
+	TypeViva:     "Answer every question before the timer runs out. Single-correct questions have exactly one right option. Multiple-correct questions can have more than one, and a wrong tick costs you that question. Fill-in-the-blank answers ignore capital letters and spaces. Stay in fullscreen and on this tab the whole time: leaving locks your exam until your teacher unlocks it.",
+	TypeInternal: "This is your question paper. Write your programs or answers where your teacher tells you to, on your lab system or on paper, and show your output when they come round. The paper closes when the timer ends.",
+	TypeExternal: "Write each answer in the editor; it saves automatically. Press Run to check it: you'll see whether each test case would execute and how correct your answer is. It's a dry run by AI, so small syntax slips don't count against you. Stay on this tab in fullscreen until you submit.",
+}
+
+var defaultPerSet = map[string]int{TypeViva: 10, TypeInternal: 3, TypeExternal: 3}
 
 type attemptStats struct {
 	Started    int64 `json:"started"`
@@ -71,6 +77,9 @@ func ensureSlices(e *Exam) {
 		}
 		if q.Answers == nil {
 			q.Answers = []string{}
+		}
+		if q.TestCases == nil {
+			q.TestCases = []TestCase{}
 		}
 	}
 	if e.Sets == nil {
@@ -215,12 +224,7 @@ func createExam(c *gin.Context) {
 		return
 	}
 	examType := strings.ToLower(strings.TrimSpace(req.Type))
-	switch examType {
-	case TypeViva:
-	case TypeInternal, TypeExternal:
-		respondErr(c, newError(http.StatusBadRequest, "%s exams are coming soon. Create a viva for now.", examType))
-		return
-	default:
+	if _, ok := questionTypes[examType]; !ok {
 		respondErr(c, newError(http.StatusBadRequest, "Unknown exam type."))
 		return
 	}
@@ -242,13 +246,13 @@ func createExam(c *gin.Context) {
 		OwnerEmail:      user.Email,
 		Type:            examType,
 		Title:           title,
-		Instructions:    defaultVivaInstructions,
+		Instructions:    defaultInstructions[examType],
 		DurationMinutes: req.DurationMinutes,
 		Status:          StatusDraft,
 		Questions:       []Question{},
-		Blueprint:       Blueprint{PerSet: 10},
+		Blueprint:       Blueprint{PerSet: defaultPerSet[examType]},
 		AllowedStudents: []string{},
-		Settings:        defaultSettings(),
+		Settings:        defaultSettings(examType),
 		Version:         1,
 		CreatedAt:       now,
 		UpdatedAt:       now,
@@ -288,6 +292,9 @@ type settingsPatch struct {
 	ClearAnswersOnUnlock *bool   `json:"clear_answers_on_unlock"`
 	CopyCode             *string `json:"copy_code"`
 	RefreshCode          *string `json:"refresh_code"`
+	AllowLeaving         *bool   `json:"allow_leaving"`
+	AllowClipboard       *bool   `json:"allow_clipboard"`
+	MaxRuns              *int    `json:"max_runs"`
 }
 
 func setBool(target *bool, value *bool) {
@@ -300,6 +307,7 @@ func patchExam(c *gin.Context) {
 	var req struct {
 		Title           *string        `json:"title"`
 		Instructions    *string        `json:"instructions"`
+		Context         *string        `json:"context"`
 		DurationMinutes *int           `json:"duration_minutes"`
 		Settings        *settingsPatch `json:"settings"`
 	}
@@ -325,6 +333,16 @@ func patchExam(c *gin.Context) {
 			}
 			e.Instructions, fields["instructions"] = instructions, instructions
 		}
+		if req.Context != nil {
+			sharedContext := strings.TrimRight(*req.Context, " \t\n")
+			if runeLen(sharedContext) > maxContext {
+				return nil, newError(http.StatusBadRequest, "The shared context can be at most %d characters.", maxContext)
+			}
+			if e.ContentLocked && sharedContext != e.Context {
+				return nil, errLocked
+			}
+			e.Context, fields["context"] = sharedContext, sharedContext
+		}
 		if req.DurationMinutes != nil {
 			if *req.DurationMinutes < 1 || *req.DurationMinutes > 600 {
 				return nil, newError(http.StatusBadRequest, "Duration must be between 1 and 600 minutes.")
@@ -340,6 +358,14 @@ func patchExam(c *gin.Context) {
 			setBool(&s.BlockExtendedDisplay, patch.BlockExtendedDisplay)
 			setBool(&s.LockOnRejoin, patch.LockOnRejoin)
 			setBool(&s.ClearAnswersOnUnlock, patch.ClearAnswersOnUnlock)
+			setBool(&s.AllowLeaving, patch.AllowLeaving)
+			setBool(&s.AllowClipboard, patch.AllowClipboard)
+			if v := patch.MaxRuns; v != nil {
+				if *v < 0 || *v > 200 {
+					return nil, newError(http.StatusBadRequest, "Checks per question must be between 0 and 200 (0 means no limit).")
+				}
+				s.MaxRuns = *v
+			}
 			if v := patch.ResultVisibility; v != nil {
 				if *v != VisibilityNone && *v != VisibilityScore && *v != VisibilityFull {
 					return nil, newError(http.StatusBadRequest, "Result visibility must be none, score or full.")
@@ -456,26 +482,25 @@ func addQuestions(c *gin.Context) {
 		respondErr(c, newError(http.StatusBadRequest, "Send at least one question."))
 		return
 	}
-	cleaned := make([]Question, 0, len(req.Questions))
-	for i, q := range req.Questions {
-		q.ID = ""
-		clean, err := cleanQuestion(q)
-		if err != nil {
-			if len(req.Questions) == 1 {
-				respondErr(c, newError(http.StatusBadRequest, "%s", err.Error()))
-			} else {
-				respondErr(c, newError(http.StatusBadRequest, "Question %d: %s", i+1, err.Error()))
-			}
-			return
-		}
-		cleaned = append(cleaned, clean)
-	}
 
 	ctx, cancel := dbCtx()
 	defer cancel()
+	var cleaned []Question
 	exam, err := modifyExam(ctx, c, func(e *Exam) (bson.M, error) {
 		if e.ContentLocked {
 			return nil, errLocked
+		}
+		cleaned = make([]Question, 0, len(req.Questions))
+		for i, q := range req.Questions {
+			q.ID = ""
+			clean, err := cleanQuestion(q, e.Type)
+			if err != nil {
+				if len(req.Questions) == 1 {
+					return nil, newError(http.StatusBadRequest, "%s", err.Error())
+				}
+				return nil, newError(http.StatusBadRequest, "Question %d: %s", i+1, err.Error())
+			}
+			cleaned = append(cleaned, clean)
 		}
 		if len(e.Questions)+len(cleaned) > maxQuestions {
 			return nil, newError(http.StatusBadRequest, "An exam can hold at most %d questions.", maxQuestions)
@@ -501,17 +526,16 @@ func updateQuestion(c *gin.Context) {
 	}
 	questionID := c.Param("qid")
 	req.Question.ID = questionID
-	clean, err := cleanQuestion(req.Question)
-	if err != nil {
-		respondErr(c, newError(http.StatusBadRequest, "%s", err.Error()))
-		return
-	}
 
 	ctx, cancel := dbCtx()
 	defer cancel()
 	exam, err := modifyExam(ctx, c, func(e *Exam) (bson.M, error) {
 		if e.ContentLocked {
 			return nil, errLocked
+		}
+		clean, err := cleanQuestion(req.Question, e.Type)
+		if err != nil {
+			return nil, newError(http.StatusBadRequest, "%s", err.Error())
 		}
 		for i := range e.Questions {
 			if e.Questions[i].ID == questionID {

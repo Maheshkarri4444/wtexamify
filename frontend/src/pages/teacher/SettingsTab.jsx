@@ -109,6 +109,26 @@ export default function SettingsTab() {
           </div>
           <div className="p-5">
             <Switch
+              checked={!s.allow_leaving}
+              onChange={(v) => setSetting("allow_leaving", !v)}
+              label="Lock when a student leaves the tab"
+              description={
+                exam.type === "internal"
+                  ? "Usually off for internals: students switch to their own IDE to write the programs."
+                  : "Switching to another tab or window locks the paper until you enter the copy code."
+              }
+            />
+          </div>
+          <div className="p-5">
+            <Switch
+              checked={!s.allow_clipboard}
+              onChange={(v) => setSetting("allow_clipboard", !v)}
+              label="Block copy and paste"
+              description="Copy, paste, cut and right-click are refused with a warning. They're never counted as cheating."
+            />
+          </div>
+          <div className="p-5">
+            <Switch
               checked={s.lock_on_rejoin}
               onChange={(v) => setSetting("lock_on_rejoin", v)}
               label="Lock when a student comes back"
@@ -125,9 +145,11 @@ export default function SettingsTab() {
         </div>
       </Card>
 
+      {exam.type !== "internal" && (
       <Card>
         <CardHeader icon={Trophy} title="Scoring and results" />
         <div className="space-y-6 p-5">
+          {exam.type === "viva" && (
           <Field label="Multiple-correct questions" hint={s.multi_scoring === "strict" ? "Any wrong tick scores 0 for that question. Otherwise marks are shared by correct ticks: 2 of 3 correct = 2/3 of the marks." : "Each wrong tick cancels a right one: 2 right and 1 wrong of 3 correct = 1/3 of the marks. Never below 0."}>
             <Segmented
               value={s.multi_scoring}
@@ -139,6 +161,18 @@ export default function SettingsTab() {
               ]}
             />
           </Field>
+          )}
+          {exam.type === "external" && (
+            <div className="flex items-center justify-between gap-6">
+              <div>
+                <div className="text-sm font-medium text-ink">AI checks per question</div>
+                <div className="mt-0.5 text-[13px] leading-snug text-muted">
+                  How many times a student can press Run on each question. Running unchanged code doesn't use one, and the final answer is always checked on submit. 0 means no limit.
+                </div>
+              </div>
+              <Stepper value={s.max_runs} onChange={(v) => setSetting("max_runs", v)} min={0} max={200} label="Checks per question" />
+            </div>
+          )}
           <Field label="After submitting, students see">
             <Segmented
               value={s.result_visibility}
@@ -153,6 +187,7 @@ export default function SettingsTab() {
           <Switch checked={s.clear_answers_on_unlock} onChange={(v) => setSetting("clear_answers_on_unlock", v)} label="Clear answers when unlocking" description="After a violation, the student starts the same paper again from blank." />
         </div>
       </Card>
+      )}
 
       <Card>
         <CardHeader icon={Shuffle} title="Shuffling" description="Students on the same set still see different papers." />
@@ -160,9 +195,11 @@ export default function SettingsTab() {
           <div className="p-5">
             <Switch checked={s.shuffle_questions} onChange={(v) => setSetting("shuffle_questions", v)} label="Shuffle question order" />
           </div>
-          <div className="p-5">
-            <Switch checked={s.shuffle_options} onChange={(v) => setSetting("shuffle_options", v)} label="Shuffle option order" />
-          </div>
+          {exam.type === "viva" && (
+            <div className="p-5">
+              <Switch checked={s.shuffle_options} onChange={(v) => setSetting("shuffle_options", v)} label="Shuffle option order" />
+            </div>
+          )}
         </div>
       </Card>
 
@@ -184,7 +221,7 @@ export default function SettingsTab() {
         </div>
       </Card>
 
-      {exam.content_locked && (
+      {exam.content_locked && exam.type === "viva" && (
         <p className="flex items-center gap-2 text-[13px] text-muted">
           <Lock className="h-3.5 w-3.5" />
           Multiple-correct scoring is locked because students have started.

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Check, Download, FileQuestion, FileSpreadsheet, Lock, Pencil, Plus, Search, Trash2 } from "lucide-react";
@@ -11,11 +11,23 @@ import { ConfirmModal, Menu } from "../../components/ui/Overlay";
 import { cn } from "../../lib/cn";
 import { teacherApi } from "../../lib/api";
 import { downloadQuestionTemplate } from "../../lib/excel";
-import { QUESTION_TYPES, letter, pluralize } from "../../lib/format";
+import { LANGUAGES, QUESTION_TYPES, languageLabel, letter, pluralize } from "../../lib/format";
+import DescriptiveEditor from "./questions/DescriptiveEditor";
 import ImportQuestionsModal from "./questions/ImportQuestionsModal";
+import { CodeCard, DescriptiveCard, SharedContextCard } from "./questions/QuestionCards";
 import QuestionEditor from "./questions/QuestionEditor";
 
-function TemplateMenu() {
+// The code editor is heavy, so it only loads for external exams.
+const CodeQuestionEditor = lazy(() => import("./questions/CodeQuestionEditor"));
+
+function TemplateMenu({ examType }) {
+  if (examType !== "viva") {
+    return (
+      <Button variant="secondary" icon={Download} onClick={() => downloadQuestionTemplate(examType, examType)}>
+        Template
+      </Button>
+    );
+  }
   return (
     <Menu
       width="w-60"
@@ -88,12 +100,20 @@ function QuestionCard({ question, number, selected, onSelect, onEdit, onDelete, 
   );
 }
 
+const EMPTY_TEXT = {
+  viva: "Add questions one by one, or import a whole spreadsheet. Mix single-correct, multiple-correct and fill-in-the-blank questions; Examify deals them into sets for you.",
+  internal: "Add the questions for this internal, or import them from a spreadsheet. Examify deals them into unique sets, so neighbours get different papers.",
+  external: "Add code questions with your answer and optional test cases. Students' code is dry-run by AI against them when they press Run, and again when they submit.",
+};
+
 export default function QuestionsTab() {
   const { bundle, setBundle } = useOutletContext();
   const { exam } = bundle;
+  const examType = exam.type;
   const locked = exam.content_locked;
   const [query, setQuery] = useState("");
   const [type, setType] = useState("");
+  const [language, setLanguage] = useState("");
   const [difficulty, setDifficulty] = useState("");
   const [selected, setSelected] = useState(() => new Set());
   const [editor, setEditor] = useState(null); // { question } for edit, {} for new
@@ -107,13 +127,20 @@ export default function QuestionsTab() {
     return numbered.filter(
       (item) =>
         (!type || item.type === type) &&
+        (!language || item.language === language) &&
         (!difficulty || (difficulty === "none" ? !item.difficulty : item.difficulty === difficulty)) &&
-        (!q || item.text.toLowerCase().includes(q) || item.options.some((o) => o.toLowerCase().includes(q)) || item.answers.some((a) => a.toLowerCase().includes(q)))
+        (!q ||
+          item.text.toLowerCase().includes(q) ||
+          item.options.some((o) => o.toLowerCase().includes(q)) ||
+          item.answers.some((a) => a.toLowerCase().includes(q)) ||
+          (item.solution || "").toLowerCase().includes(q))
     );
-  }, [numbered, query, type, difficulty]);
+  }, [numbered, query, type, language, difficulty]);
 
   const counts = useMemo(() => {
     const by = (key, value) => exam.questions.filter((q) => q[key] === value).length;
+    const languages = {};
+    for (const q of exam.questions) if (q.language) languages[q.language] = (languages[q.language] || 0) + 1;
     return {
       mcq_single: by("type", "mcq_single"),
       mcq_multi: by("type", "mcq_multi"),
@@ -122,8 +149,13 @@ export default function QuestionsTab() {
       medium: by("difficulty", "medium"),
       hard: by("difficulty", "hard"),
       untagged: by("difficulty", ""),
+      languages,
+      tests: exam.questions.reduce((sum, q) => sum + (q.test_cases?.length || 0), 0),
     };
   }, [exam.questions]);
+
+  const Editor = examType === "internal" ? DescriptiveEditor : examType === "external" ? CodeQuestionEditor : QuestionEditor;
+  const QuestionItem = examType === "internal" ? DescriptiveCard : examType === "external" ? CodeCard : QuestionCard;
 
   const save = async (question, another) => {
     setBusy(true);
@@ -182,25 +214,28 @@ export default function QuestionsTab() {
 
   const allVisibleSelected = visible.length > 0 && visible.every((q) => selected.has(q.id));
 
+  const editorModal = (
+    <Suspense fallback={null}>
+      {editor && <Editor open question={editor.question} onClose={() => setEditor(null)} onSave={save} saving={busy} examId={exam.id} />}
+    </Suspense>
+  );
+
   if (!exam.questions.length) {
     return (
-      <>
-        <EmptyState
-          icon={FileQuestion}
-          title="Build your question bank"
-          description="Add questions one by one, or import a whole spreadsheet. Mix single-correct, multiple-correct and fill-in-the-blank questions; Examify deals them into sets for you."
-        >
+      <div className="space-y-5">
+        {examType === "external" && <SharedContextCard exam={exam} setBundle={setBundle} />}
+        <EmptyState icon={FileQuestion} title="Build your question bank" description={EMPTY_TEXT[examType]}>
           <Button icon={Plus} onClick={() => setEditor({})} disabled={locked}>
             Add question
           </Button>
           <Button variant="secondary" icon={FileSpreadsheet} onClick={() => setImporting(true)} disabled={locked}>
             Import from Excel
           </Button>
-          <TemplateMenu />
+          <TemplateMenu examType={examType} />
         </EmptyState>
-        <QuestionEditor open={Boolean(editor)} question={editor?.question} onClose={() => setEditor(null)} onSave={save} saving={busy} />
-        <ImportQuestionsModal open={importing} onClose={() => setImporting(false)} existingTexts={[]} onImport={importQuestions} />
-      </>
+        {editorModal}
+        <ImportQuestionsModal open={importing} onClose={() => setImporting(false)} existingTexts={[]} onImport={importQuestions} examType={examType} />
+      </div>
     );
   }
 
@@ -211,22 +246,37 @@ export default function QuestionsTab() {
           Questions are read-only because students have started. Duplicate the exam to make a changed copy.
         </Callout>
       )}
+      {examType === "external" && <SharedContextCard exam={exam} setBundle={setBundle} />}
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[14rem] flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search questions, options and answers" className="pl-9" />
         </div>
-        <div className="w-44">
-          <Select value={type} onChange={(e) => setType(e.target.value)} aria-label="Filter by type">
-            <option value="">All types</option>
-            {Object.entries(QUESTION_TYPES).map(([value, meta]) => (
-              <option key={value} value={value}>
-                {meta.label}
-              </option>
-            ))}
-          </Select>
-        </div>
+        {examType === "viva" && (
+          <div className="w-44">
+            <Select value={type} onChange={(e) => setType(e.target.value)} aria-label="Filter by type">
+              <option value="">All types</option>
+              {["mcq_single", "mcq_multi", "fill"].map((value) => (
+                <option key={value} value={value}>
+                  {QUESTION_TYPES[value].label}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
+        {examType === "external" && (
+          <div className="w-44">
+            <Select value={language} onChange={(e) => setLanguage(e.target.value)} aria-label="Filter by language">
+              <option value="">All languages</option>
+              {[...Object.keys(LANGUAGES), "any"].map((value) => (
+                <option key={value} value={value}>
+                  {languageLabel(value)}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
         <div className="w-40">
           <Select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} aria-label="Filter by difficulty">
             <option value="">Any difficulty</option>
@@ -237,7 +287,7 @@ export default function QuestionsTab() {
           </Select>
         </div>
         <div className="flex gap-2">
-          <TemplateMenu />
+          <TemplateMenu examType={examType} />
           <Button variant="secondary" icon={FileSpreadsheet} onClick={() => setImporting(true)} disabled={locked}>
             Import
           </Button>
@@ -249,9 +299,23 @@ export default function QuestionsTab() {
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-line bg-surface px-4 py-3 text-[13px] text-muted">
         <span className="font-semibold text-ink">{pluralize(exam.questions.length, "question")}</span>
-        <span>{counts.mcq_single} single</span>
-        <span>{counts.mcq_multi} multiple</span>
-        <span>{counts.fill} fill in the blank</span>
+        {examType === "viva" && (
+          <>
+            <span>{counts.mcq_single} single</span>
+            <span>{counts.mcq_multi} multiple</span>
+            <span>{counts.fill} fill in the blank</span>
+          </>
+        )}
+        {examType === "external" && (
+          <>
+            {Object.entries(counts.languages).map(([lang, n]) => (
+              <span key={lang}>
+                {n} {languageLabel(lang)}
+              </span>
+            ))}
+            <span>{pluralize(counts.tests, "test case")}</span>
+          </>
+        )}
         <span className="hidden h-4 w-px bg-line sm:block" />
         <span>{counts.easy} easy</span>
         <span>{counts.medium} medium</span>
@@ -279,7 +343,7 @@ export default function QuestionsTab() {
       {visible.length ? (
         <div className="space-y-3">
           {visible.map((question) => (
-            <QuestionCard
+            <QuestionItem
               key={question.id}
               question={question}
               number={question.number}
@@ -295,8 +359,8 @@ export default function QuestionsTab() {
         <EmptyState icon={Search} title="No questions match" description="Try another search or filter." />
       )}
 
-      <QuestionEditor open={Boolean(editor)} question={editor?.question} onClose={() => setEditor(null)} onSave={save} saving={busy} />
-      <ImportQuestionsModal open={importing} onClose={() => setImporting(false)} existingTexts={exam.questions.map((q) => q.text)} onImport={importQuestions} />
+      {editorModal}
+      <ImportQuestionsModal open={importing} onClose={() => setImporting(false)} existingTexts={exam.questions.map((q) => q.text)} onImport={importQuestions} examType={examType} />
       <ConfirmModal
         open={Boolean(deleting)}
         onClose={() => setDeleting(null)}

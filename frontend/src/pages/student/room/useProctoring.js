@@ -1,15 +1,17 @@
 import { useEffect, useRef } from "react";
 
 // Keys that would copy, paste, print, save or open the source/devtools.
-const BLOCKED_WITH_MODIFIER = { c: "copy", v: "paste", x: "cut", p: "print", s: "save", u: "source" };
+const CLIPBOARD_KEYS = { c: "copy", v: "paste", x: "cut" };
+const PAGE_KEYS = { p: "print", s: "save", u: "source" };
 
 /**
  * While active, watches for the student leaving the exam (tab switch, window
- * switch, fullscreen exit) and blocks copy, paste, right-click, drag-and-drop,
- * reload and devtools shortcuts. Leaving calls onViolation; a blocked action
- * calls onBlocked and is never counted as cheating.
+ * switch, fullscreen exit) and blocks reload, print and devtools shortcuts.
+ * Leaving calls onViolation; a blocked action calls onBlocked and is never
+ * counted as cheating. reportLeaving and blockClipboard follow the exam's
+ * settings: an internal usually lets students switch to their IDE and paste.
  */
-export function useProctoring({ active, requireFullscreen, onViolation, onBlocked }) {
+export function useProctoring({ active, requireFullscreen, reportLeaving = true, blockClipboard = true, onViolation, onBlocked }) {
   const violation = useRef(onViolation);
   const blocked = useRef(onBlocked);
   useEffect(() => {
@@ -20,74 +22,64 @@ export function useProctoring({ active, requireFullscreen, onViolation, onBlocke
   useEffect(() => {
     if (!active) return undefined;
     let blurTimer = null;
-
-    const onVisibility = () => {
-      if (document.hidden) violation.current("tab_hidden");
+    const listeners = [];
+    const listen = (target, type, handler, capture = false) => {
+      target.addEventListener(type, handler, capture);
+      listeners.push(() => target.removeEventListener(type, handler, capture));
     };
-    // A short delay ignores focus flickers (for example a native picker); a real
-    // switch to another app or window stays unfocused.
-    const onBlur = () => {
-      clearTimeout(blurTimer);
-      blurTimer = setTimeout(() => {
-        if (!document.hasFocus()) violation.current("window_blur");
-      }, 600);
-    };
-    const onFullscreen = () => {
-      if (requireFullscreen && !document.fullscreenElement) violation.current("fullscreen_exit");
-    };
-    const block = (kind) => (event) => {
+    // Stopping the event here (capture phase, before it reaches the page) also
+    // keeps the code editor from handling a paste on its own.
+    const refuse = (event, kind) => {
       event.preventDefault();
+      event.stopPropagation();
       blocked.current(kind);
     };
-    const onCopy = block("copy");
-    const onCut = block("cut");
-    const onPaste = block("paste");
-    const onContextMenu = block("contextmenu");
-    const onDrop = block("drop");
-    const onDragStart = (event) => event.preventDefault();
-    const onKeyDown = (event) => {
-      const key = event.key.toLowerCase();
-      const mod = event.ctrlKey || event.metaKey;
-      if (mod && BLOCKED_WITH_MODIFIER[key] && !event.shiftKey) {
-        event.preventDefault();
-        blocked.current(BLOCKED_WITH_MODIFIER[key]);
-      } else if (event.key === "F12" || (mod && event.shiftKey && ["i", "j", "c"].includes(key))) {
-        event.preventDefault();
-        blocked.current("devtools");
-      } else if (event.key === "F5" || (mod && key === "r")) {
-        event.preventDefault();
-        blocked.current("reload");
-      }
-    };
-    const onBeforeUnload = (event) => {
+
+    if (reportLeaving) {
+      listen(document, "visibilitychange", () => {
+        if (document.hidden) violation.current("tab_hidden");
+      });
+      // A short delay ignores focus flickers (for example a native picker); a real
+      // switch to another app or window stays unfocused.
+      listen(window, "blur", () => {
+        clearTimeout(blurTimer);
+        blurTimer = setTimeout(() => {
+          if (!document.hasFocus()) violation.current("window_blur");
+        }, 600);
+      });
+    }
+    if (requireFullscreen) {
+      listen(document, "fullscreenchange", () => {
+        if (!document.fullscreenElement) violation.current("fullscreen_exit");
+      });
+    }
+    if (blockClipboard) {
+      for (const kind of ["copy", "cut", "paste", "contextmenu", "drop"]) listen(document, kind, (event) => refuse(event, kind), true);
+      listen(document, "dragstart", (event) => event.preventDefault(), true);
+    }
+    listen(
+      document,
+      "keydown",
+      (event) => {
+        const key = event.key.toLowerCase();
+        const mod = event.ctrlKey || event.metaKey;
+        if (mod && !event.shiftKey && (PAGE_KEYS[key] || (blockClipboard && CLIPBOARD_KEYS[key]))) {
+          refuse(event, PAGE_KEYS[key] || CLIPBOARD_KEYS[key]);
+        } else if (event.key === "F12" || (mod && event.shiftKey && ["i", "j", "c"].includes(key))) {
+          refuse(event, "devtools");
+        } else if (event.key === "F5" || (mod && key === "r")) {
+          refuse(event, "reload");
+        }
+      },
+      true
+    );
+    listen(window, "beforeunload", (event) => {
       event.preventDefault();
       event.returnValue = "";
-    };
-
-    document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("blur", onBlur);
-    document.addEventListener("fullscreenchange", onFullscreen);
-    document.addEventListener("copy", onCopy, true);
-    document.addEventListener("cut", onCut, true);
-    document.addEventListener("paste", onPaste, true);
-    document.addEventListener("contextmenu", onContextMenu, true);
-    document.addEventListener("drop", onDrop, true);
-    document.addEventListener("dragstart", onDragStart, true);
-    document.addEventListener("keydown", onKeyDown, true);
-    window.addEventListener("beforeunload", onBeforeUnload);
+    });
     return () => {
       clearTimeout(blurTimer);
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("blur", onBlur);
-      document.removeEventListener("fullscreenchange", onFullscreen);
-      document.removeEventListener("copy", onCopy, true);
-      document.removeEventListener("cut", onCut, true);
-      document.removeEventListener("paste", onPaste, true);
-      document.removeEventListener("contextmenu", onContextMenu, true);
-      document.removeEventListener("drop", onDrop, true);
-      document.removeEventListener("dragstart", onDragStart, true);
-      document.removeEventListener("keydown", onKeyDown, true);
-      window.removeEventListener("beforeunload", onBeforeUnload);
+      listeners.forEach((remove) => remove());
     };
-  }, [active, requireFullscreen]);
+  }, [active, requireFullscreen, reportLeaving, blockClipboard]);
 }

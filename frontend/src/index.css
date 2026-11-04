@@ -95,9 +95,10 @@
     user-select: none;
   }
 
-  /* Inputs stay selectable even inside a no-select area. */
+  /* Inputs and code editors stay selectable even inside a no-select area. */
   .no-select input,
-  .no-select textarea {
+  .no-select textarea,
+  .no-select .cm-editor {
     -webkit-user-select: text;
     user-select: text;
   }

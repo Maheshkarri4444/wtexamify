@@ -113,8 +113,43 @@ export function ResumeGate({ needsShare, needsFullscreen, onShare, onFullscreen 
   );
 }
 
-export function SubmitModal({ open, onClose, onConfirm, submitting, answered, total, marked }) {
+export function SubmitModal({ open, onClose, onConfirm, submitting, examType = "viva", answered, total, marked, unchecked = 0 }) {
+  if (examType === "internal") {
+    return (
+      <Modal
+        open={open}
+        onClose={onClose}
+        dismissable={!submitting}
+        icon={Send}
+        title="Close the question paper?"
+        description="You won't be able to open it again. Your teacher marks your programs separately."
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={onClose} disabled={submitting}>
+              Keep it open
+            </Button>
+            <Button onClick={onConfirm} loading={submitting} icon={Send}>
+              Close the paper
+            </Button>
+          </>
+        }
+      />
+    );
+  }
   const unanswered = total - answered;
+  const stats =
+    examType === "external"
+      ? [
+          { label: "Written", value: answered, tone: "text-primary-text" },
+          { label: "Not written", value: unanswered, tone: unanswered ? "text-danger-text" : "text-muted" },
+          { label: "Not run yet", value: unchecked, tone: unchecked ? "text-warning-text" : "text-muted" },
+        ]
+      : [
+          { label: "Answered", value: answered, tone: "text-primary-text" },
+          { label: "Not answered", value: unanswered, tone: unanswered ? "text-danger-text" : "text-muted" },
+          { label: "For review", value: marked, tone: marked ? "text-warning-text" : "text-muted" },
+        ];
   return (
     <Modal
       open={open}
@@ -136,11 +171,7 @@ export function SubmitModal({ open, onClose, onConfirm, submitting, answered, to
       }
     >
       <div className="grid grid-cols-3 gap-2 pt-1">
-        {[
-          { label: "Answered", value: answered, tone: "text-primary-text" },
-          { label: "Not answered", value: unanswered, tone: unanswered ? "text-danger-text" : "text-muted" },
-          { label: "For review", value: marked, tone: marked ? "text-warning-text" : "text-muted" },
-        ].map(({ label, value, tone }) => (
+        {stats.map(({ label, value, tone }) => (
           <div key={label} className="rounded-xl border border-line bg-subtle/50 px-3 py-3 text-center">
             <div className={cn("text-2xl font-semibold", tone)}>{value}</div>
             <div className="text-xs text-muted">{label}</div>
@@ -148,6 +179,7 @@ export function SubmitModal({ open, onClose, onConfirm, submitting, answered, to
         ))}
       </div>
       {unanswered > 0 && <p className="mt-4 text-[13px] text-danger-text">{unanswered === 1 ? "One question is" : `${unanswered} questions are`} still unanswered.</p>}
+      {examType === "external" && <p className="mt-3 text-[13px] leading-relaxed text-muted">After you submit, your final code for every question is checked, including code you never ran. Your score is ready in a minute or two.</p>}
     </Modal>
   );
 }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import toast from "react-hot-toast";
-import { ArrowRight, CheckCircle2, Circle, KeyRound, ListChecks, MonitorUp, Shuffle, Timer, Trophy } from "lucide-react";
+import { ArrowRight, CheckCircle2, Circle, KeyRound, ListChecks, MonitorUp, Shuffle, Sparkles, Timer, Trophy } from "lucide-react";
 import { TeacherCodes } from "../../components/exam/ExamBits";
 import { Badge } from "../../components/ui/Badge";
 import { Card, CardHeader } from "../../components/ui/Card";
@@ -36,7 +36,17 @@ export default function OverviewTab() {
     s.require_fullscreen && "Fullscreen",
     s.require_screen_share && "Entire-screen sharing",
     s.block_extended_display && "Single monitor",
+    !s.allow_leaving && "Lock on leaving the tab",
+    !s.allow_clipboard && "No copy/paste",
     s.lock_on_rejoin && "Lock on rejoin",
+  ].filter(Boolean);
+  const rows = [
+    { icon: Timer, label: "Time per student", value: formatMinutes(exam.duration_minutes) },
+    { icon: Shuffle, label: "Shuffling", value: [s.shuffle_questions && "questions", exam.type === "viva" && s.shuffle_options && "options"].filter(Boolean).join(" and ") || "Off" },
+    { icon: MonitorUp, label: "Proctoring", value: proctoring.length ? proctoring.join(" · ") : "Off" },
+    s.max_violations > 0 || exam.type !== "internal" ? { icon: KeyRound, label: "Auto-submit", value: s.max_violations ? `After ${pluralize(s.max_violations, "violation")}` : "Never" } : null,
+    exam.type === "external" && { icon: Sparkles, label: "AI checks", value: s.max_runs ? `${s.max_runs} per question` : "No limit" },
+    { icon: Trophy, label: "Results", value: exam.type === "internal" ? "Not marked in Examify" : VISIBILITY[s.result_visibility] },
   ].filter(Boolean);
 
   return (
@@ -81,15 +91,9 @@ export default function OverviewTab() {
         </Card>
 
         <Card>
-          <CardHeader title="How this viva runs" />
+          <CardHeader title={`How this ${exam.type} runs`} />
           <dl className="divide-y divide-line text-sm">
-            {[
-              { icon: Timer, label: "Time per student", value: formatMinutes(exam.duration_minutes) },
-              { icon: Shuffle, label: "Shuffling", value: [s.shuffle_questions && "questions", s.shuffle_options && "options"].filter(Boolean).join(" and ") || "Off" },
-              { icon: MonitorUp, label: "Proctoring", value: proctoring.length ? proctoring.join(" · ") : "Off" },
-              { icon: KeyRound, label: "Auto-submit", value: s.max_violations ? `After ${pluralize(s.max_violations, "violation")}` : "Never" },
-              { icon: Trophy, label: "Results", value: VISIBILITY[s.result_visibility] },
-            ].map(({ icon: Icon, label, value }) => (
+            {rows.map(({ icon: Icon, label, value }) => (
               <div key={label} className="flex items-start gap-3 px-5 py-3">
                 <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
                 <dt className="w-32 shrink-0 text-muted">{label}</dt>

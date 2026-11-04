@@ -206,19 +206,29 @@ func finalizeAttempts(ctx context.Context, e *Exam, attempts []*Attempt, reason 
 	byID := questionMap(e)
 	now := time.Now()
 	models := make([]mongo.WriteModel, 0, len(attempts))
+	var needsAI []primitive.ObjectID
 	for _, att := range attempts {
 		if att.Status != AttemptInProgress {
 			continue
 		}
-		score, maxScore, results := GradeAttempt(byID, att, e.Settings.MultiScoring)
-		att.Status, att.Score, att.MaxScore, att.Results = AttemptSubmitted, score, maxScore, results
+		score, maxScore, results, pending := GradeAttempt(byID, att, e.Settings.MultiScoring)
+		grading := ""
+		if e.Type == TypeExternal {
+			grading = GradingDone
+			if pending {
+				// Code that wasn't run in its final form is checked in the background.
+				grading = GradingPending
+				needsAI = append(needsAI, att.ID)
+			}
+		}
+		att.Status, att.Score, att.MaxScore, att.Results, att.Grading = AttemptSubmitted, score, maxScore, results, grading
 		att.SubmittedAt, att.SubmitReason, att.Locked, att.LockReason = &now, reason, false, ""
 		models = append(models, mongo.NewUpdateOneModel().
 			SetFilter(bson.M{"_id": att.ID, "status": AttemptInProgress}).
 			SetUpdate(bson.M{
 				"$set": bson.M{
 					"status": AttemptSubmitted, "submitted_at": now, "submit_reason": reason,
-					"score": score, "max_score": maxScore, "results": results,
+					"score": score, "max_score": maxScore, "results": results, "grading": grading,
 					"answers": att.Answers, "answered_count": att.AnsweredCount,
 					"locked": false, "lock_reason": "",
 				},
@@ -228,8 +238,22 @@ func finalizeAttempts(ctx context.Context, e *Exam, attempts []*Attempt, reason 
 	if len(models) == 0 {
 		return nil
 	}
-	_, err := attemptsCol().BulkWrite(ctx, models, options.BulkWrite().SetOrdered(false))
-	return err
+	if _, err := attemptsCol().BulkWrite(ctx, models, options.BulkWrite().SetOrdered(false)); err != nil {
+		return err
+	}
+	queueGrading(needsAI...)
+	return nil
+}
+
+// countAnswered counts answers with something in them.
+func countAnswered(answers map[string]Answer) int {
+	n := 0
+	for _, a := range answers {
+		if len(a.Selected) > 0 || strings.TrimSpace(a.Text) != "" || strings.TrimSpace(a.Code) != "" {
+			n++
+		}
+	}
+	return n
 }
 
 func rollNumber(email string) string {

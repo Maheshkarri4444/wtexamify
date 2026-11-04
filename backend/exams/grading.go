@@ -1,6 +1,8 @@
 package exams
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"math"
 	"strings"
 )
@@ -16,7 +18,27 @@ func NormalizeFill(s string) string {
 	return s
 }
 
-func GradeQuestion(q Question, a Answer, multiScoring string) QuestionResult {
+// codeHash identifies one version of a code answer, so a check is only reused
+// for exactly the code it judged.
+func codeHash(language, code string) string {
+	sum := sha256.Sum256([]byte(language + "\x00" + strings.TrimSpace(code)))
+	return hex.EncodeToString(sum[:12])
+}
+
+// answerLanguage is the language a code answer is written in.
+func answerLanguage(q Question, a Answer) string {
+	if q.Language != LangAny {
+		return q.Language
+	}
+	if _, ok := languages[a.Language]; ok {
+		return a.Language
+	}
+	return "other"
+}
+
+// GradeQuestion marks one answer. Code answers need the AI's check of that
+// exact code (run); without one the result is pending.
+func GradeQuestion(q Question, a Answer, run *RunResult, multiScoring string) QuestionResult {
 	result := QuestionResult{QuestionID: q.ID, Status: ResultUnanswered, Max: q.Marks}
 	switch q.Type {
 	case QMCQSingle:
@@ -72,25 +94,57 @@ func GradeQuestion(q Question, a Answer, multiScoring string) QuestionResult {
 				break
 			}
 		}
+	case QDescriptive:
+		result.Status = ResultNotGraded
+	case QCode:
+		if strings.TrimSpace(a.Code) == "" {
+			return result
+		}
+		if run == nil || run.CodeHash != codeHash(answerLanguage(q, a), a.Code) {
+			result.Status = ResultPending
+			return result
+		}
+		percent := max(0, min(100, run.Percent))
+		result.Percent = &percent
+		result.Awarded = round2(q.Marks * float64(percent) / 100)
+		switch {
+		case percent >= 100:
+			result.Status = ResultCorrect
+		case percent > 0:
+			result.Status = ResultPartial
+		default:
+			result.Status = ResultWrong
+		}
 	}
 	return result
 }
 
-// GradeAttempt scores every question on the student's paper.
-func GradeAttempt(byID map[string]Question, att *Attempt, multiScoring string) (float64, float64, []QuestionResult) {
-	var score, maxScore float64
-	results := []QuestionResult{}
+// GradeAttempt scores every question on the student's paper, applying any marks
+// the teacher set by hand. pending is true while some code answer is unchecked.
+func GradeAttempt(byID map[string]Question, att *Attempt, multiScoring string) (score, maxScore float64, results []QuestionResult, pending bool) {
+	results = []QuestionResult{}
 	for _, id := range att.QuestionIDs {
 		q, ok := byID[id]
 		if !ok {
 			continue
 		}
-		r := GradeQuestion(q, att.Answers[id], multiScoring)
+		var run *RunResult
+		if r, ok := att.Runs[id]; ok {
+			run = &r
+		}
+		r := GradeQuestion(q, att.Answers[id], run, multiScoring)
+		r.Auto = r.Awarded
+		if marks, ok := att.Overrides[id]; ok {
+			r.Awarded, r.Overridden = round2(max(0, min(r.Max, marks))), true
+		}
+		if r.Status == ResultPending && !r.Overridden {
+			pending = true
+		}
 		results = append(results, r)
 		score += r.Awarded
 		maxScore += r.Max
 	}
-	return round2(score), round2(maxScore), results
+	return round2(score), round2(maxScore), results, pending
 }
 
 func questionMap(e *Exam) map[string]Question {

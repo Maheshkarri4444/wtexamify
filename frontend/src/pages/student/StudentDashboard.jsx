@@ -74,7 +74,13 @@ function SmallCard({ card }) {
   const submitted = attempt?.status === "submitted";
   const missed = exam.status === "ended" && !attempt;
   let badge;
-  if (submitted) {
+  if (submitted && attempt.grading === "pending") {
+    badge = (
+      <Badge tone="info" icon={Hourglass}>
+        Being checked
+      </Badge>
+    );
+  } else if (submitted) {
     badge =
       attempt.percent !== null && attempt.percent !== undefined ? (
         <span className="text-right">
@@ -85,7 +91,7 @@ function SmallCard({ card }) {
         </span>
       ) : (
         <Badge tone="success" icon={CheckCircle2}>
-          Submitted
+          {exam.type === "internal" ? "Finished" : "Submitted"}
         </Badge>
       );
   } else if (missed) {
@@ -108,7 +114,7 @@ function SmallCard({ card }) {
       <div className="min-w-0 flex-1">
         <div className="truncate font-semibold text-ink">{exam.title}</div>
         <div className="text-[13px] text-muted">
-          {submitted ? `Submitted ${timeAgo(attempt.submitted_at)}` : `${formatMinutes(exam.duration_minutes)} · ${exam.questions_per_set} questions`}
+          {submitted ? `${exam.type === "internal" ? "Finished" : "Submitted"} ${timeAgo(attempt.submitted_at)}` : `${formatMinutes(exam.duration_minutes)} · ${exam.questions_per_set} questions`}
         </div>
       </div>
       {badge}

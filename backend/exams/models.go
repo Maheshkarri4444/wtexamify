@@ -19,9 +19,14 @@ const (
 	StatusLive  = "live"  // students can start
 	StatusEnded = "ended" // no new starts; unfinished attempts are submitted
 
-	QMCQSingle = "mcq_single"
-	QMCQMulti  = "mcq_multi"
-	QFill      = "fill"
+	QMCQSingle   = "mcq_single"
+	QMCQMulti    = "mcq_multi"
+	QFill        = "fill"
+	QDescriptive = "descriptive" // internal: shown on the paper, answered outside Examify
+	QCode        = "code"        // external: answered in the editor, checked by AI
+
+	// LangAny lets the student pick the language for a code question.
+	LangAny = "any"
 
 	DiffEasy   = "easy"
 	DiffMedium = "medium"
@@ -34,6 +39,13 @@ const (
 	ResultPartial    = "partial"
 	ResultWrong      = "wrong"
 	ResultUnanswered = "unanswered"
+	ResultPending    = "pending"    // a code answer still waiting for its AI check
+	ResultNotGraded  = "not_graded" // internal questions aren't marked in Examify
+
+	// Grading of an external attempt after submit.
+	GradingPending = "pending"
+	GradingDone    = "done"
+	GradingFailed  = "failed"
 
 	// Multi-select scoring. Strict: any wrong option scores 0, otherwise marks are
 	// proportional to the correct options picked. Net: wrong picks cancel right ones.
@@ -54,6 +66,18 @@ type Question struct {
 	Answers    []string `bson:"answers" json:"answers"` // accepted answers, for fill in the blank
 	Difficulty string   `bson:"difficulty" json:"difficulty"`
 	Marks      float64  `bson:"marks" json:"marks"`
+	// Code questions only. Solution and hidden test cases never reach students.
+	Language    string     `bson:"language,omitempty" json:"language"`
+	Solution    string     `bson:"solution,omitempty" json:"solution"`
+	StarterCode string     `bson:"starter_code,omitempty" json:"starter_code"`
+	TestCases   []TestCase `bson:"test_cases,omitempty" json:"test_cases"`
+}
+
+type TestCase struct {
+	ID     string `bson:"id" json:"id"`
+	Input  string `bson:"input" json:"input"`
+	Output string `bson:"output" json:"output"`
+	Hidden bool   `bson:"hidden" json:"hidden"` // students see that it exists and whether it passes, not its contents
 }
 
 // Blueprint describes what every set looks like.
@@ -107,24 +131,31 @@ type Settings struct {
 	ClearAnswersOnUnlock bool   `bson:"clear_answers_on_unlock" json:"clear_answers_on_unlock"`
 	CopyCode             string `bson:"copy_code" json:"copy_code"`       // unlocks a locked student
 	RefreshCode          string `bson:"refresh_code" json:"refresh_code"` // gives a student a new set
+	// Phrased as permissions so exams saved before these existed keep the strict behaviour.
+	AllowLeaving   bool `bson:"allow_leaving" json:"allow_leaving"`     // switching tabs doesn't lock (internals: students code in their own IDE)
+	AllowClipboard bool `bson:"allow_clipboard" json:"allow_clipboard"` // copy and paste aren't blocked
+	MaxRuns        int  `bson:"max_runs" json:"max_runs"`               // AI checks per code question; 0 = no limit
 }
 
 type Exam struct {
-	ID              primitive.ObjectID `bson:"_id" json:"id"`
-	OwnerID         primitive.ObjectID `bson:"owner_id" json:"owner_id"`
-	OwnerEmail      string             `bson:"owner_email" json:"owner_email"`
-	Type            string             `bson:"type" json:"type"`
-	Title           string             `bson:"title" json:"title"`
-	Instructions    string             `bson:"instructions" json:"instructions"`
-	DurationMinutes int                `bson:"duration_minutes" json:"duration_minutes"`
-	Status          string             `bson:"status" json:"status"`
-	Questions       []Question         `bson:"questions" json:"questions"`
-	Blueprint       Blueprint          `bson:"blueprint" json:"blueprint"`
-	Sets            []QuestionSet      `bson:"sets" json:"sets"`
-	Report          GenReport          `bson:"report" json:"report"`
-	AllowedStudents []string           `bson:"allowed_students" json:"allowed_students"`
-	Assignments     []Assignment       `bson:"assignments" json:"assignments"`
-	Settings        Settings           `bson:"settings" json:"settings"`
+	ID           primitive.ObjectID `bson:"_id" json:"id"`
+	OwnerID      primitive.ObjectID `bson:"owner_id" json:"owner_id"`
+	OwnerEmail   string             `bson:"owner_email" json:"owner_email"`
+	Type         string             `bson:"type" json:"type"`
+	Title        string             `bson:"title" json:"title"`
+	Instructions string             `bson:"instructions" json:"instructions"`
+	// Context is shared reference material for code questions, such as table
+	// definitions and sample rows. Students see it, and the AI checks against it.
+	Context         string        `bson:"context,omitempty" json:"context"`
+	DurationMinutes int           `bson:"duration_minutes" json:"duration_minutes"`
+	Status          string        `bson:"status" json:"status"`
+	Questions       []Question    `bson:"questions" json:"questions"`
+	Blueprint       Blueprint     `bson:"blueprint" json:"blueprint"`
+	Sets            []QuestionSet `bson:"sets" json:"sets"`
+	Report          GenReport     `bson:"report" json:"report"`
+	AllowedStudents []string      `bson:"allowed_students" json:"allowed_students"`
+	Assignments     []Assignment  `bson:"assignments" json:"assignments"`
+	Settings        Settings      `bson:"settings" json:"settings"`
 	// ContentLocked flips on when the first student starts. After that questions,
 	// blueprint and sets can't change, so every student's paper stays valid.
 	ContentLocked bool       `bson:"content_locked" json:"content_locked"`
@@ -139,6 +170,24 @@ type Answer struct {
 	Selected []int  `bson:"selected" json:"selected"` // original option indexes
 	Text     string `bson:"text" json:"text"`
 	Marked   bool   `bson:"marked" json:"marked"` // marked for review
+	Code     string `bson:"code,omitempty" json:"code"`
+	Language string `bson:"language,omitempty" json:"language"` // what the student wrote in, for "any" questions
+}
+
+type TestOutcome struct {
+	ID       string `bson:"id" json:"id"`
+	Executes bool   `bson:"executes" json:"executes"`
+}
+
+// RunResult is the AI's verdict on one version of a student's code.
+type RunResult struct {
+	CodeHash string        `bson:"code_hash" json:"-"` // which code it judged; any edit makes it stale
+	Language string        `bson:"language" json:"language"`
+	Percent  int           `bson:"percent" json:"percent"`
+	Tests    []TestOutcome `bson:"tests" json:"tests"`
+	At       time.Time     `bson:"at" json:"at"`
+	Count    int           `bson:"count" json:"count"` // checks the student has used on this question
+	Model    string        `bson:"model" json:"-"`
 }
 
 type Event struct {
@@ -152,6 +201,9 @@ type QuestionResult struct {
 	Status     string  `bson:"status" json:"status"`
 	Awarded    float64 `bson:"awarded" json:"awarded"`
 	Max        float64 `bson:"max" json:"max"`
+	Percent    *int    `bson:"percent,omitempty" json:"percent"` // code questions: the AI's correctness score
+	Auto       float64 `bson:"auto" json:"auto"`                 // marks before any teacher override
+	Overridden bool    `bson:"overridden" json:"overridden"`
 }
 
 // ClientFlags is what the student's browser last reported about proctoring.
@@ -193,11 +245,19 @@ type Attempt struct {
 	Results          []QuestionResult  `bson:"results" json:"results"`
 	Events           []Event           `bson:"events" json:"events"`
 	UserAgent        string            `bson:"user_agent" json:"user_agent"`
+	// External exams.
+	Runs         map[string]RunResult `bson:"runs" json:"-"`
+	RunCount     int                  `bson:"run_count" json:"run_count"`
+	LastRunAt    *time.Time           `bson:"last_run_at,omitempty" json:"last_run_at"`
+	Grading      string               `bson:"grading" json:"grading"`
+	GradingTries int                  `bson:"grading_tries" json:"-"`
+	// Marks the teacher set by hand, by question ID. They replace the automatic marks.
+	Overrides map[string]float64 `bson:"overrides" json:"overrides"`
 }
 
-func defaultSettings() Settings {
+func defaultSettings(examType string) Settings {
 	copyCode, refreshCode := newCodePair()
-	return Settings{
+	settings := Settings{
 		ShuffleQuestions:     true,
 		ShuffleOptions:       true,
 		ResultVisibility:     VisibilityScore,
@@ -210,4 +270,20 @@ func defaultSettings() Settings {
 		CopyCode:             copyCode,
 		RefreshCode:          refreshCode,
 	}
+	switch examType {
+	case TypeInternal:
+		// Students read the paper here and write their programs elsewhere, so
+		// nothing stops them leaving the tab or copying the question.
+		settings.ResultVisibility = VisibilityNone
+		settings.MaxViolations = 0
+		settings.RequireFullscreen = false
+		settings.RequireScreenShare = false
+		settings.BlockExtendedDisplay = false
+		settings.LockOnRejoin = false
+		settings.AllowLeaving = true
+		settings.AllowClipboard = true
+	case TypeExternal:
+		settings.MaxRuns = 20
+	}
+	return settings
 }

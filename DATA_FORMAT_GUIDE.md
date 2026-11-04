@@ -1,8 +1,8 @@
-# Data format guide (Examify 2.0 · viva)
+# Data format guide (Examify 2.0)
 
-Templates with example rows can be downloaded from **Exam → Questions → Template**. Every import shows a row-by-row report (what's ready, what's skipped and why) before anything is added.
+Templates with example rows for each exam type can be downloaded from **Exam → Questions → Template**. Ready-made files for testing are in [`samples/`](samples/README.md). Every import shows a row-by-row report (what's ready, what's skipped and why) before anything is added.
 
-## Questions spreadsheet
+## Viva questions spreadsheet
 
 First sheet, one question per row. Header names are matched loosely (`Option A`, `option_a`, `a` and `option 1` all work).
 
@@ -25,7 +25,40 @@ Example:
 
 Rows are skipped (with the reason shown) when the question is empty, an MCQ has fewer than two options, the answer can't be read or points at an empty option, a single-correct question lists several answers, or the question is already in the exam.
 
-## How answers are marked
+## Internal questions spreadsheet
+
+An internal is a question paper only: students read it in Examify and write their programs in the lab, and nothing is marked here.
+
+| Column | Required | What to put in it |
+| --- | --- | --- |
+| `question` | yes | The question as students should read it. |
+| `difficulty` | no | `easy`, `medium` or `hard`, for balancing sets. |
+| `marks` | no | Shown on the paper. Defaults to 1. |
+
+## External questions spreadsheet
+
+Code questions are checked by AI (Gemini) against your answer, with no compiler. Run gives the student an AI dry run of their code: how correct it is (0–100%) and whether each test case would execute. Small syntax slips don't count; the logic does.
+
+| Column | Required | What to put in it |
+| --- | --- | --- |
+| `question` | yes | The question. SQL questions can refer to the exam's **shared schema and data**, which you paste in on the Questions tab. Every student sees it, and the AI gets it with every check. |
+| `language` | yes | `sql`, `python`, `c`, `cpp`, `java`, `javascript`, `php`, `other`, or `any` (the student picks their language, for DSA). `mysql`, `py`, `c++`, `js` and similar also work. |
+| `answer` | yes | Your answer: code or text. Students never see it unless results are set to *Score and answers*. |
+| `starter_code` | no | What the editor starts with, such as a function signature. |
+| `marks` | no | Defaults to 1. Students get marks × the AI's correctness %, so 80% correct on a 10-mark question is 8 marks. |
+| `difficulty` | no | `easy`, `medium` or `hard`. |
+| `test_1_input`, `test_1_output` … `test_10_*` | no | Test cases, like LeetCode. An input can be empty, but an output can't. With no test cases at all, the AI just compares the student's code with your answer. |
+| `hidden_tests` | no | Test numbers to hide, such as `2,3`, or `all`. Students still see whether a hidden test executes, but not its input or output. |
+
+## How code answers are marked
+
+- Each **Run** checks the code on screen and uses one of the question's checks (Settings → *AI checks per question*, 20 by default). Running unchanged code shows the last result again and doesn't use a check. A student waits 5 seconds between checks.
+- On submit, every code answer without an up-to-date check is checked in the background, even if the student never pressed Run. Until that finishes, the student sees "Checking your code…" and the teacher sees *AI checking*.
+- Marks = question marks × the AI's correctness % for the final code. An empty answer scores 0.
+- The teacher can replace the marks for any answer (**Change marks** on the answer sheet) or have the AI check a whole sheet again (**Re-check with AI**).
+- Before the exam, use **Check my answer with AI** in the question editor. Your own answer should come out at or near 100%.
+
+## How viva answers are marked
 
 - **Single correct:** full marks for the right option, otherwise 0.
 - **Multiple correct:** partial marks, never negative. The exam setting picks the rule:

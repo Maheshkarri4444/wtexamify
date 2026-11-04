@@ -7,14 +7,27 @@ import { Spinner } from "../../../components/ui/Feedback";
 import { Modal } from "../../../components/ui/Overlay";
 import { cn } from "../../../lib/cn";
 import { downloadQuestionTemplate, parseQuestionFile } from "../../../lib/excel";
-import { QUESTION_TYPES, letter, pluralize } from "../../../lib/format";
+import { QUESTION_TYPES, languageLabel, letter, pluralize } from "../../../lib/format";
 
 function answerSummary(q) {
   if (q.type === "fill") return q.answers.join(" | ");
+  if (q.type === "descriptive") return [q.difficulty, `${q.marks} marks`].filter(Boolean).join(" · ");
+  if (q.type === "code") return `${languageLabel(q.language)} · ${pluralize(q.test_cases.length, "test")}${q.test_cases.some((t) => t.hidden) ? " (some hidden)" : ""}`;
   return q.correct.map((i) => `${letter(i)}. ${q.options[i]}`).join(", ");
 }
 
-export default function ImportQuestionsModal({ open, onClose, existingTexts, onImport }) {
+const TEMPLATES = {
+  viva: [
+    ["mixed", "All types"],
+    ["mcq_single", QUESTION_TYPES.mcq_single.label],
+    ["mcq_multi", QUESTION_TYPES.mcq_multi.label],
+    ["fill", QUESTION_TYPES.fill.label],
+  ],
+  internal: [["internal", "Internal template"]],
+  external: [["external", "External template"]],
+};
+
+export default function ImportQuestionsModal({ open, onClose, existingTexts, onImport, examType = "viva" }) {
   const [result, setResult] = useState(null);
   const [fileName, setFileName] = useState("");
   const [parsing, setParsing] = useState(false);
@@ -34,7 +47,7 @@ export default function ImportQuestionsModal({ open, onClose, existingTexts, onI
     setParsing(true);
     setFileName(file.name);
     try {
-      setResult(await parseQuestionFile(file, existingTexts));
+      setResult(await parseQuestionFile(file, existingTexts, examType));
     } catch {
       toast.error("Couldn't read that file. Save it as .xlsx or .csv and try again.");
       setResult(null);
@@ -119,15 +132,16 @@ export default function ImportQuestionsModal({ open, onClose, existingTexts, onI
           </button>
           <div className="rounded-xl border border-line bg-surface p-4">
             <div className="text-sm font-medium text-ink">Start from a template</div>
-            <p className="mt-0.5 text-[13px] text-muted">Each template has example rows and a “How to fill it” sheet. Mix types freely in one file.</p>
+            <p className="mt-0.5 text-[13px] text-muted">
+              {examType === "external"
+                ? "One row per question: language, your answer, optional starter code and up to 10 test cases. A “How to fill it” sheet explains each column."
+                : examType === "internal"
+                  ? "One row per question, with optional difficulty and marks."
+                  : "Each template has example rows and a “How to fill it” sheet. Mix types freely in one file."}
+            </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {[
-                ["mixed", "All types"],
-                ["mcq_single", QUESTION_TYPES.mcq_single.label],
-                ["mcq_multi", QUESTION_TYPES.mcq_multi.label],
-                ["fill", QUESTION_TYPES.fill.label],
-              ].map(([kind, label]) => (
-                <Button key={kind} variant="secondary" size="sm" icon={Download} onClick={() => downloadQuestionTemplate(kind)}>
+              {TEMPLATES[examType].map(([kind, label]) => (
+                <Button key={kind} variant="secondary" size="sm" icon={Download} onClick={() => downloadQuestionTemplate(kind, examType)}>
                   {label}
                 </Button>
               ))}
@@ -178,7 +192,7 @@ export default function ImportQuestionsModal({ open, onClose, existingTexts, onI
                       <th className="px-3.5 py-2 font-medium">Row</th>
                       <th className="px-3.5 py-2 font-medium">Type</th>
                       <th className="px-3.5 py-2 font-medium">Question</th>
-                      <th className="px-3.5 py-2 font-medium">Answer</th>
+                      <th className="px-3.5 py-2 font-medium">{examType === "viva" ? "Answer" : "Details"}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">

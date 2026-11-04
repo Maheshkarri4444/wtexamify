@@ -63,6 +63,7 @@ export const teacherApi = {
   addQuestions: (id, questions) => post(`${exam(id)}/questions`, { questions }),
   updateQuestion: (id, qid, question) => put(`${exam(id)}/questions/${qid}`, { question }),
   deleteQuestions: (id, ids, all = false) => post(`${exam(id)}/questions/delete`, { ids, all }),
+  checkQuestion: (id, question, code, language) => post(`${exam(id)}/questions/check`, { question, code, language }),
   previewBlueprint: (id, blueprint) => post(`${exam(id)}/blueprint/preview`, blueprint),
   saveBlueprint: (id, blueprint) => put(`${exam(id)}/blueprint`, blueprint),
   reshuffleSets: (id) => post(`${exam(id)}/sets/regenerate`),
@@ -73,6 +74,7 @@ export const teacherApi = {
   results: (id) => get(`${exam(id)}/results`),
   attempt: (id, aid) => get(`${exam(id)}/attempts/${aid}`),
   attemptAction: (id, aid, action, minutes) => post(`${exam(id)}/attempts/${aid}/action`, { action, minutes }),
+  setMarks: (id, aid, questionId, marks) => post(`${exam(id)}/attempts/${aid}/marks`, { question_id: questionId, marks }),
 };
 
 const attempt = (aid) => `/api/v2/student/attempts/${aid}`;
@@ -87,4 +89,5 @@ export const studentApi = {
   unlock: (aid, code) => post(`${attempt(aid)}/unlock`, { code }),
   refresh: (aid, code) => post(`${attempt(aid)}/refresh`, { code }),
   submit: (aid, answers) => post(`${attempt(aid)}/submit`, { answers }),
+  run: (aid, questionId, code, language) => post(`${attempt(aid)}/run`, { question_id: questionId, code, language }),
 };

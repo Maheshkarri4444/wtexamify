@@ -15,8 +15,28 @@ const (
 	maxOptions      = 8
 	maxQuestionText = 4000
 	maxAnswerText   = 500
+	maxCodeLength   = 20000
+	maxStarterCode  = 5000
+	maxTestCases    = 10
+	maxTestText     = 2000
+	maxContext      = 20000
 	studentDomain   = "@rguktn.ac.in"
 )
+
+// Languages a code question can be answered in. "any" lets the student choose.
+var languages = map[string]string{
+	"sql": "SQL", "python": "Python", "c": "C", "cpp": "C++", "java": "Java",
+	"javascript": "JavaScript", "php": "PHP", "other": "Other",
+}
+
+// questionTypes lists what each kind of exam can hold.
+var questionTypes = map[string][]string{
+	TypeViva:     {QMCQSingle, QMCQMulti, QFill},
+	TypeInternal: {QDescriptive},
+	TypeExternal: {QCode},
+}
+
+func runeLen(s string) int { return utf8.RuneCountInString(s) }
 
 var (
 	rollNumberRe = regexp.MustCompile(`^[a-z]\d{6}$`)
@@ -24,15 +44,27 @@ var (
 	codeRe       = regexp.MustCompile(`^[A-Z0-9]{4,20}$`)
 )
 
-// cleanQuestion trims and checks a question from the teacher. Blank options are
-// dropped and the correct-option indexes move with the options that remain.
-func cleanQuestion(q Question) (Question, error) {
+// cleanQuestion trims and checks a question from the teacher for an exam of the
+// given type. Blank options are dropped and the correct-option indexes move with
+// the options that remain.
+func cleanQuestion(q Question, examType string) (Question, error) {
 	q.Type = strings.ToLower(strings.TrimSpace(q.Type))
+	allowed := questionTypes[examType]
+	if q.Type == "" && len(allowed) == 1 {
+		q.Type = allowed[0]
+	}
+	permitted := false
+	for _, t := range allowed {
+		permitted = permitted || t == q.Type
+	}
+	if !permitted {
+		return q, fmt.Errorf("%s exams can't hold %q questions", examType, q.Type)
+	}
 	q.Text = strings.TrimSpace(q.Text)
 	if q.Text == "" {
 		return q, errors.New("the question text is empty")
 	}
-	if utf8.RuneCountInString(q.Text) > maxQuestionText {
+	if runeLen(q.Text) > maxQuestionText {
 		return q, fmt.Errorf("the question is longer than %d characters", maxQuestionText)
 	}
 	q.Difficulty = strings.ToLower(strings.TrimSpace(q.Difficulty))
@@ -51,8 +83,49 @@ func cleanQuestion(q Question) (Question, error) {
 	if !validQuestionID(q.ID) {
 		q.ID = newQuestionID()
 	}
+	if q.Type != QCode {
+		q.Language, q.Solution, q.StarterCode, q.TestCases = "", "", "", []TestCase{}
+	}
 
 	switch q.Type {
+	case QDescriptive:
+		q.Options, q.Correct, q.Answers = []string{}, []int{}, []string{}
+	case QCode:
+		q.Options, q.Correct, q.Answers = []string{}, []int{}, []string{}
+		q.Language = strings.ToLower(strings.TrimSpace(q.Language))
+		if _, ok := languages[q.Language]; !ok && q.Language != LangAny {
+			return q, errors.New("pick the language this question is answered in")
+		}
+		q.Solution = strings.TrimSpace(q.Solution)
+		if q.Solution == "" {
+			return q, errors.New("add your answer: the AI compares each student's code with it")
+		}
+		if runeLen(q.Solution) > maxCodeLength {
+			return q, fmt.Errorf("the answer is longer than %d characters", maxCodeLength)
+		}
+		q.StarterCode = strings.TrimRight(q.StarterCode, " \t\n")
+		if runeLen(q.StarterCode) > maxStarterCode {
+			return q, fmt.Errorf("the starter code is longer than %d characters", maxStarterCode)
+		}
+		tests := []TestCase{}
+		for i, t := range q.TestCases {
+			t.Input, t.Output = strings.TrimSpace(t.Input), strings.TrimSpace(t.Output)
+			if t.Input == "" && t.Output == "" {
+				continue
+			}
+			if t.Output == "" {
+				return q, fmt.Errorf("test case %d needs an expected output", i+1)
+			}
+			if runeLen(t.Input) > maxTestText || runeLen(t.Output) > maxTestText {
+				return q, fmt.Errorf("test case %d is longer than %d characters", i+1, maxTestText)
+			}
+			t.ID = fmt.Sprintf("t%d", len(tests)+1)
+			tests = append(tests, t)
+		}
+		if len(tests) > maxTestCases {
+			return q, fmt.Errorf("use at most %d test cases", maxTestCases)
+		}
+		q.TestCases = tests
 	case QMCQSingle, QMCQMulti:
 		options := []string{}
 		newIndex := map[int]int{}

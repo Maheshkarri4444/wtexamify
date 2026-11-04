@@ -5,14 +5,26 @@ import (
 	"strings"
 )
 
-// PaperQuestion is what a student sees: no correct options, no accepted answers.
+// PaperQuestion is what a student sees: no correct options, no accepted answers,
+// no reference solution, and hidden test cases without their contents.
 type PaperQuestion struct {
-	ID      string        `json:"id"`
-	Number  int           `json:"number"`
-	Type    string        `json:"type"`
-	Text    string        `json:"text"`
-	Options []PaperOption `json:"options"`
-	Marks   float64       `json:"marks"`
+	ID          string        `json:"id"`
+	Number      int           `json:"number"`
+	Type        string        `json:"type"`
+	Text        string        `json:"text"`
+	Options     []PaperOption `json:"options"`
+	Marks       float64       `json:"marks"`
+	Difficulty  string        `json:"difficulty,omitempty"`
+	Language    string        `json:"language,omitempty"`
+	StarterCode string        `json:"starter_code,omitempty"`
+	Tests       []PaperTest   `json:"tests,omitempty"`
+}
+
+type PaperTest struct {
+	ID     string `json:"id"`
+	Input  string `json:"input,omitempty"`
+	Output string `json:"output,omitempty"`
+	Hidden bool   `json:"hidden"`
 }
 
 // PaperOption keeps the option's original index as its ID, so shuffled options
@@ -90,6 +102,19 @@ func paperQuestions(e *Exam, att *Attempt) []PaperQuestion {
 				pq.Options = append(pq.Options, PaperOption{ID: idx, Text: q.Options[idx]})
 			}
 		}
+		switch q.Type {
+		case QDescriptive:
+			pq.Difficulty = q.Difficulty
+		case QCode:
+			pq.Difficulty, pq.Language, pq.StarterCode, pq.Tests = q.Difficulty, q.Language, q.StarterCode, []PaperTest{}
+			for _, t := range q.TestCases {
+				if t.Hidden {
+					pq.Tests = append(pq.Tests, PaperTest{ID: t.ID, Hidden: true})
+				} else {
+					pq.Tests = append(pq.Tests, PaperTest{ID: t.ID, Input: t.Input, Output: t.Output})
+				}
+			}
+		}
 		out = append(out, pq)
 	}
 	return out
@@ -118,15 +143,18 @@ func sanitizeAnswers(raw map[string]Answer, att *Attempt) (map[string]Answer, in
 				selected = append(selected, s)
 			}
 		}
-		text := strings.TrimSpace(a.Text)
-		if len([]rune(text)) > maxAnswerText {
-			text = string([]rune(text)[:maxAnswerText])
+		text := truncateRunes(strings.TrimSpace(a.Text), maxAnswerText)
+		code := truncateRunes(a.Code, maxCodeLength)
+		language := ""
+		if _, ok := languages[a.Language]; ok {
+			language = a.Language
 		}
-		if len(selected) == 0 && text == "" && !a.Marked {
+		hasCode := strings.TrimSpace(code) != ""
+		if len(selected) == 0 && text == "" && !hasCode && !a.Marked && language == "" {
 			continue
 		}
-		clean[id] = Answer{Selected: selected, Text: text, Marked: a.Marked}
-		if len(selected) > 0 || text != "" {
+		clean[id] = Answer{Selected: selected, Text: text, Marked: a.Marked, Code: code, Language: language}
+		if len(selected) > 0 || text != "" || hasCode {
 			answered++
 		}
 	}

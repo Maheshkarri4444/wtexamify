@@ -7,6 +7,7 @@ import { Card } from "../../../components/ui/Card";
 import { Callout, Spinner } from "../../../components/ui/Feedback";
 import { Checkbox } from "../../../components/ui/Form";
 import { cn } from "../../../lib/cn";
+import { EXAM_TYPES } from "../../../lib/examTypes";
 import { formatMinutes, pluralize } from "../../../lib/format";
 import { checkEnvironment } from "../../../lib/proctor";
 
@@ -36,16 +37,28 @@ export default function Lobby({ info, attempt, sharing, onShare, onStart, starti
   const waiting = info.status === "ready";
   const ready = (!proctored || browserOk) && displayOk && (!req.screen_share || sharing) && agreed && info.status === "live";
 
-  const rules = [
-    req.fullscreen
+  const type = info.type;
+  const lockable = req.lock_on_leave || req.fullscreen || req.screen_share;
+  const ordinal = `${info.max_violations}${["th", "st", "nd", "rd"][info.max_violations] || "th"}`;
+  const leaveRule = req.lock_on_leave
+    ? req.fullscreen
       ? "Stay on this tab, in fullscreen, until you submit. Switching tabs or windows, or leaving fullscreen, locks your exam."
-      : "Stay on this tab until you submit. Switching to another tab or window locks your exam.",
-    "A locked exam needs your teacher's code to continue. Raise your hand and wait.",
-    info.max_violations > 0 && `On the ${info.max_violations}${["th", "st", "nd", "rd"][info.max_violations] || "th"} lock, your exam is submitted automatically.`,
-    "Copy, paste and right-click are turned off.",
-    "Answers save automatically. If the timer runs out, what you've answered is submitted.",
+      : "Stay on this tab until you submit. Switching to another tab or window locks your exam."
+    : req.fullscreen && "Stay in fullscreen until you submit. Leaving fullscreen locks your exam.";
+  const rules = [
+    type === "internal" && "This page is your question paper. Write your programs the way your teacher tells you, then close the paper.",
+    type === "external" &&
+      "Each question has a Run button. An AI dry-runs your code against the test cases and your teacher's answer: you see how correct it is and whether each test would execute. Small syntax slips don't matter; the logic does.",
+    type === "external" && (info.max_runs > 0 ? `You can run each question up to ${info.max_runs} times. Running the same code again doesn't use one.` : "You can run each question as often as you like."),
+    type === "external" && "When you submit, your final code for every question is checked, even code you never ran.",
+    leaveRule,
+    lockable && "A locked exam needs your teacher's code to continue. Raise your hand and wait.",
+    lockable && info.max_violations > 0 && `On the ${ordinal} lock, your exam is submitted automatically.`,
+    req.block_clipboard && "Copy, paste and right-click are turned off.",
+    type === "internal" ? "When the timer runs out, the paper closes on its own." : "Answers save automatically. If the timer runs out, what you've answered is submitted.",
     req.screen_share && "Your entire screen is shared while you write. Don't click the browser's sharing bar.",
   ].filter(Boolean);
+  const startLabel = resuming ? (type === "internal" ? "Reopen the paper" : "Resume exam") : type === "internal" ? "Open the question paper" : req.fullscreen ? "Enter fullscreen and start" : "Start exam";
 
   return (
     <div className="min-h-screen bg-canvas bg-dots">
@@ -60,7 +73,7 @@ export default function Lobby({ info, attempt, sharing, onShare, onStart, starti
 
       <main className="mx-auto grid max-w-6xl gap-6 px-4 pb-16 pt-4 sm:px-6 lg:grid-cols-[1.2fr_1fr]">
         <Card className="animate-slide-up p-6 sm:p-8">
-          <p className="text-[13px] font-medium text-primary-text">Viva</p>
+          <p className="text-[13px] font-medium text-primary-text">{EXAM_TYPES[type]?.label || "Exam"}</p>
           <h1 className="mt-1 text-[28px] font-semibold leading-tight tracking-tight text-ink">{info.title}</h1>
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-muted">
             <span className="flex items-center gap-1.5">
@@ -100,8 +113,10 @@ export default function Lobby({ info, attempt, sharing, onShare, onStart, starti
             <>
               <h2 className="text-lg font-semibold text-ink">{resuming ? "Resume your exam" : "Before you start"}</h2>
               {resuming && (
-                <Callout tone="warning" className="mt-3">
-                  You left this exam earlier. Resuming may lock it until your teacher enters the code, so call them over.
+                <Callout tone={req.lock_on_rejoin ? "warning" : "info"} className="mt-3">
+                  {req.lock_on_rejoin
+                    ? "You left this exam earlier. Resuming locks it until your teacher enters the code, so call them over."
+                    : "You left this exam earlier. Your saved answers are waiting, and the timer kept running."}
                 </Callout>
               )}
               <ul className="mt-2 divide-y divide-line">
@@ -128,7 +143,10 @@ export default function Lobby({ info, attempt, sharing, onShare, onStart, starti
 
               <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-subtle/50 p-3.5">
                 <Checkbox checked={agreed} onChange={setAgreed} label="I agree to the exam rules" className="mt-0.5" />
-                <span className="text-[13px] leading-relaxed text-ink-2">I've read the rules. I'll stay on this tab{req.fullscreen ? " in fullscreen" : ""} until I submit.</span>
+                <span className="text-[13px] leading-relaxed text-ink-2">
+                  I've read the rules.
+                  {req.lock_on_leave ? ` I'll stay on this tab${req.fullscreen ? " in fullscreen" : ""} until I submit.` : req.fullscreen ? " I'll stay in fullscreen until I submit." : ""}
+                </span>
               </label>
 
               {waiting ? (
@@ -139,7 +157,7 @@ export default function Lobby({ info, attempt, sharing, onShare, onStart, starti
                 </div>
               ) : (
                 <Button size="lg" className="mt-5 w-full" icon={resuming ? Play : req.fullscreen ? Maximize : Play} onClick={onStart} loading={starting} disabled={!ready}>
-                  {resuming ? "Resume exam" : req.fullscreen ? "Enter fullscreen and start" : "Start exam"}
+                  {startLabel}
                 </Button>
               )}
               {!env.chromium && !proctored && (

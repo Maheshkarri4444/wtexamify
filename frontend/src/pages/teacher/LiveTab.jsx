@@ -6,6 +6,7 @@ import {
   CircleDashed,
   Clock3,
   Eye,
+  Info,
   KeyRound,
   Lock,
   MonitorOff,
@@ -28,19 +29,47 @@ import { Card, CardHeader } from "../../components/ui/Card";
 import { Meter, StatTile } from "../../components/ui/Data";
 import { Callout, EmptyState, PageLoader } from "../../components/ui/Feedback";
 import { Input, Segmented } from "../../components/ui/Form";
-import { ConfirmModal, Menu } from "../../components/ui/Overlay";
+import { ConfirmModal, Menu, Tooltip } from "../../components/ui/Overlay";
 import { cn } from "../../lib/cn";
 import { teacherApi } from "../../lib/api";
-import { formatClock, timeAgo } from "../../lib/format";
+import { formatClock, pluralize, timeAgo } from "../../lib/format";
 import { useNow, usePolling } from "../../lib/hooks";
 import AttemptDrawer from "./AttemptDrawer";
 
+// What each status means and what the teacher can do about it, shown on hover.
+const STATUS_HELP = {
+  locked: {
+    title: "Locked",
+    text: "The student left the exam, so their paper is hidden until you let them back in. Type the copy code on their laptop, or choose Unlock from the ⋯ menu on this row. Their saved answers are kept.",
+  },
+  offline: {
+    title: "Offline",
+    text: "Their browser hasn't checked in for over 45 seconds: the laptop may be asleep, off Wi-Fi, or the tab was closed. Everything saved so far is safe; they continue when they reconnect.",
+  },
+  writing: { title: "Writing", text: "The student is writing. Their answers save automatically every few seconds." },
+  not_started: { title: "Not started", text: "This student hasn't opened the exam yet." },
+  submitted: { title: "Submitted", text: "The student has finished and can't change their answers. Open ⋯ → View answers to see their paper." },
+  grading: { title: "Submitted, being checked", text: "Finished. Gemini is still checking some answers, so the score will update in a moment." },
+};
+
 function statusOf(row) {
+  if (row.status === "submitted" && row.grading === "pending") return { key: "submitted", help: "grading", label: "Checking", tone: "info", icon: CheckCircle2 };
   if (row.status === "submitted") return { key: "submitted", label: "Submitted", tone: "success", icon: CheckCircle2 };
   if (row.status === "in_progress" && row.locked) return { key: "locked", label: "Locked", tone: "danger", icon: Lock };
   if (row.status === "in_progress" && !row.online) return { key: "offline", label: "Offline", tone: "warning", icon: WifiOff };
   if (row.status === "in_progress") return { key: "writing", label: "Writing", tone: "info", icon: PencilLine };
   return { key: "not_started", label: "Not started", tone: "neutral", icon: CircleDashed };
+}
+
+function StatusHelp({ state, reason }) {
+  const help = STATUS_HELP[state.help || state.key];
+  return (
+    <span className="block">
+      <span className="block font-semibold text-ink">{help.title}</span>
+      {reason && <span className="mt-0.5 block text-danger-text">Why: {reason}</span>}
+      <span className="mt-1 block">{help.text}</span>
+    </span>
+  );
 }
 
 export default function LiveTab() {
@@ -156,7 +185,7 @@ export default function LiveTab() {
                     <th className="py-2.5 pl-5 font-medium">Student</th>
                     <th className="px-3 py-2.5 font-medium">Status</th>
                     <th className="px-3 py-2.5 font-medium">Set</th>
-                    <th className="px-3 py-2.5 font-medium">Answered</th>
+                    <th className="px-3 py-2.5 font-medium">{exam.type === "internal" ? "Paper" : "Answered"}</th>
                     <th className="px-3 py-2.5 font-medium">Violations</th>
                     <th className="px-3 py-2.5 font-medium">Time left</th>
                     <th className="px-3 py-2.5 font-medium">Last seen</th>
@@ -174,20 +203,27 @@ export default function LiveTab() {
                           <div className="max-w-[12rem] truncate text-xs text-muted">{row.name || row.email}</div>
                         </td>
                         <td className="px-3 py-3">
-                          <Badge tone={row.state.tone} icon={row.state.icon}>
-                            {row.state.label}
-                          </Badge>
+                          <Tooltip content={<StatusHelp state={row.state} reason={row.locked ? row.lock_reason : ""} />}>
+                            <Badge tone={row.state.tone} icon={row.state.icon}>
+                              {row.state.label}
+                              <Info className="h-3 w-3 opacity-60" />
+                            </Badge>
+                          </Tooltip>
                           {row.locked && row.lock_reason && <div className="mt-1 max-w-[12rem] truncate text-[11px] text-danger-text">{row.lock_reason}</div>}
                           {writing && row.flags && !row.flags.sharing && exam.settings.require_screen_share && !row.locked && (
-                            <div className="mt-1 flex items-center gap-1 text-[11px] text-warning-text">
-                              <MonitorOff className="h-3 w-3" /> Not sharing
-                            </div>
+                            <Tooltip content="Their last check-in said screen sharing is off. They'll be locked once their browser notices; if not, check their laptop." className="mt-1">
+                              <span className="flex items-center gap-1 text-[11px] text-warning-text">
+                                <MonitorOff className="h-3 w-3" /> Not sharing
+                              </span>
+                            </Tooltip>
                           )}
                         </td>
                         <td className="px-3 py-3 tabular-nums text-ink-2">{row.set || "—"}</td>
                         <td className="w-36 px-3 py-3">
                           {row.status === "not_started" ? (
                             <span className="text-muted">—</span>
+                          ) : exam.type === "internal" ? (
+                            <span className="text-xs text-ink-2">{pluralize(row.total, "question")}</span>
                           ) : (
                             <div className="space-y-1">
                               <div className="text-xs tabular-nums text-ink-2">
@@ -199,15 +235,20 @@ export default function LiveTab() {
                         </td>
                         <td className="px-3 py-3">
                           {row.violations > 0 ? (
-                            <span className="inline-flex items-center gap-1 font-medium tabular-nums text-danger-text">
-                              <ShieldAlert className="h-3.5 w-3.5" />
-                              {row.violations}
-                              {exam.settings.max_violations > 0 && <span className="font-normal text-muted">/ {exam.settings.max_violations}</span>}
-                            </span>
+                            <Tooltip
+                              content={`Times this student left the exam (tab switch, fullscreen exit or stopped sharing). Each one locked their paper.${exam.settings.max_violations > 0 ? ` At ${exam.settings.max_violations}, the exam is submitted automatically.` : ""}`}
+                            >
+                              <span className="inline-flex items-center gap-1 font-medium tabular-nums text-danger-text">
+                                <ShieldAlert className="h-3.5 w-3.5" />
+                                {row.violations}
+                                {exam.settings.max_violations > 0 && <span className="font-normal text-muted">/ {exam.settings.max_violations}</span>}
+                              </span>
+                            </Tooltip>
                           ) : (
                             <span className="tabular-nums text-muted">0</span>
                           )}
                           {row.refreshes > 0 && <div className="text-[11px] text-muted">{row.refreshes} refresh</div>}
+                          {row.runs > 0 && <div className="text-[11px] text-muted">{row.runs} code checks</div>}
                         </td>
                         <td className="px-3 py-3 font-mono text-[13px] tabular-nums">
                           {writing && left !== null ? <span className={cn(left < 60000 ? "text-danger-text" : left < 300000 ? "text-warning-text" : "text-ink-2")}>{formatClock(left)}</span> : <span className="font-sans text-muted">—</span>}
@@ -268,7 +309,7 @@ export default function LiveTab() {
         </div>
       </div>
 
-      <AttemptDrawer examId={exam.id} attemptId={viewing} onClose={() => setViewing(null)} />
+      <AttemptDrawer examId={exam.id} examType={exam.type} attemptId={viewing} onClose={() => setViewing(null)} />
       <ConfirmModal
         open={Boolean(confirmSubmit)}
         onClose={() => setConfirmSubmit(null)}

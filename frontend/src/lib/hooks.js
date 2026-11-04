@@ -51,6 +51,17 @@ export function useNow(ms = 1000) {
   return now;
 }
 
+// Whether the app is in dark mode right now, following the theme toggle.
+export function useIsDark() {
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
+  useEffect(() => {
+    const observer = new MutationObserver(() => setDark(document.documentElement.classList.contains("dark")));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+  return dark;
+}
+
 export function useDebounced(value, ms) {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {

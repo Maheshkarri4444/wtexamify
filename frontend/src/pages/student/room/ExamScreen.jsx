@@ -286,29 +286,36 @@ function QuestionPanel({ question, index, total, answer, onAnswer, onNavigate, o
   );
 }
 
+/** The exam room's top bar: title, set, timer, teacher tools and submit. */
+export function RoomHeader({ info, state, save, stream, offsetRef, onExpire, onSubmit, onTools, submitLabel = "Submit", className }) {
+  return (
+    <header className={cn("sticky top-0 z-30 shrink-0 border-b border-line bg-surface/90 backdrop-blur-xl", stream ? "h-[84px]" : "h-16")}>
+      <div className={cn("relative mx-auto flex h-full max-w-7xl items-center gap-4 px-4 sm:px-6", className)}>
+        <Logo compact />
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-ink">{info.title}</div>
+          <div className="text-xs text-muted">Set {state.set_number}</div>
+        </div>
+        {stream && <ScreenPreview stream={stream} />}
+        <div className="ml-auto flex items-center gap-2 sm:gap-3">
+          {save && <SaveIndicator save={save} />}
+          <Timer deadline={state.deadline_at} offsetRef={offsetRef} onExpire={onExpire} />
+          <IconButton icon={KeyRound} label="Teacher tools" variant="secondary" onClick={onTools} />
+          <ThemeToggle />
+          <Button icon={Send} onClick={onSubmit} className="hidden sm:inline-flex">
+            {submitLabel}
+          </Button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
 export default function ExamScreen({ info, state, questions, answers, current, visited, save, stream, offsetRef, onAnswer, onNavigate, onExpire, onSubmit, onTools }) {
   const question = questions[current];
   return (
     <div className="no-select min-h-screen bg-canvas">
-      <header className={cn("sticky top-0 z-30 border-b border-line bg-surface/90 backdrop-blur-xl", stream ? "h-[84px]" : "h-16")}>
-        <div className="relative mx-auto flex h-full max-w-7xl items-center gap-4 px-4 sm:px-6">
-          <Logo compact />
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-ink">{info.title}</div>
-            <div className="text-xs text-muted">Set {state.set_number}</div>
-          </div>
-          {stream && <ScreenPreview stream={stream} />}
-          <div className="ml-auto flex items-center gap-2 sm:gap-3">
-            <SaveIndicator save={save} />
-            <Timer deadline={state.deadline_at} offsetRef={offsetRef} onExpire={onExpire} />
-            <IconButton icon={KeyRound} label="Teacher tools" variant="secondary" onClick={onTools} />
-            <ThemeToggle />
-            <Button icon={Send} onClick={onSubmit} className="hidden sm:inline-flex">
-              Submit
-            </Button>
-          </div>
-        </div>
-      </header>
+      <RoomHeader info={info} state={state} save={save} stream={stream} offsetRef={offsetRef} onExpire={onExpire} onSubmit={onSubmit} onTools={onTools} />
 
       <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         {question && (

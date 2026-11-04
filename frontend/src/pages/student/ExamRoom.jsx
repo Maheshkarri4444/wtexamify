@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { ArrowLeft, SearchX } from "lucide-react";
@@ -7,11 +7,16 @@ import { PageLoader } from "../../components/ui/Feedback";
 import { studentApi } from "../../lib/api";
 import { isAnswered } from "../../lib/format";
 import { enterFullscreen, exitFullscreen, isFullscreen, isStreamLive, shareEntireScreen, stopStream } from "../../lib/proctor";
+import { checkIsCurrent } from "./room/codeAnswers";
 import ExamScreen from "./room/ExamScreen";
 import Lobby from "./room/Lobby";
 import { LockOverlay, ResumeGate, SubmitModal, TeacherToolsModal } from "./room/Overlays";
+import PaperScreen from "./room/PaperScreen";
 import ResultScreen from "./room/ResultScreen";
 import { useProctoring } from "./room/useProctoring";
+
+// The code editor is heavy, so only externals load it.
+const CodeScreen = lazy(() => import("./room/CodeScreen"));
 
 const LOCK_REASONS = {
   tab_hidden: "You switched to another tab or window.",
@@ -27,7 +32,7 @@ const BLOCKED_MESSAGES = {
   contextmenu: "Right-click is turned off during the exam.",
   drop: "Dragging text in is turned off during the exam.",
   print: "Printing is turned off during the exam.",
-  save: "Saving the page is turned off during the exam.",
+  save: "No need to save: your answers save automatically.",
   source: "Viewing the page source is turned off during the exam.",
   devtools: "Developer tools are turned off during the exam.",
   reload: "Reloading is turned off during the exam. Your answers save automatically.",
@@ -47,6 +52,7 @@ export default function ExamRoom() {
   const [questions, setQuestions] = useState([]);
   const [state, setState] = useState(null);
   const [answers, setAnswers] = useState({});
+  const [runs, setRuns] = useState({}); // latest AI check per code question
   const [current, setCurrent] = useState(0);
   const [visited, setVisited] = useState(() => new Set());
   const [stream, setStream] = useState(null);
@@ -85,6 +91,10 @@ export default function ExamRoom() {
       answersRef.current = paper.answers || {};
       dirtyRef.current = false;
       setAnswers(answersRef.current);
+      // A check from before a reload still counts if the saved code hasn't changed.
+      const checks = {};
+      for (const [id, run] of Object.entries(paper.runs || {})) checks[id] = { ...run, code: run.current ? (answersRef.current[id]?.code ?? "") : null };
+      setRuns(checks);
       setCurrent(0);
       setVisited(new Set(paper.questions?.length ? [paper.questions[0].id] : []));
       setRoomState(paper.state);
@@ -195,6 +205,27 @@ export default function ExamRoom() {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => syncRef.current(), SAVE_DELAY_MS);
   }, []);
+
+  // Asks the AI to check one code answer. The server saves the code first.
+  const runCode = useCallback(
+    async (questionId, code, language) => {
+      const s = stateRef.current;
+      if (!s || s.status !== "in_progress") return null;
+      const saved = answersRef.current[questionId];
+      if (saved?.code !== code || (language && saved?.language !== language)) updateAnswer(questionId, language ? { code, language } : { code });
+      try {
+        const result = await studentApi.run(s.id, questionId, code, language);
+        setRuns((all) => ({ ...all, [questionId]: { ...result.run, code } }));
+        if (result.cached) toast("Same code as your last check, so here's that result again. It didn't use a check.", { id: "run", icon: "♻️" });
+        return result;
+      } catch (error) {
+        toast.error(error.status === 0 ? "You're offline. Your code is kept here; run it again once you're back online." : error.message, { id: "run", duration: 6000 });
+        if (error.status === 409) syncRef.current();
+        return null;
+      }
+    },
+    [updateAnswer]
+  );
 
   const report = useCallback(
     (type) => {
@@ -320,6 +351,8 @@ export default function ExamRoom() {
   useProctoring({
     active: running && !state.locked && !needsFullscreen && !needsShare,
     requireFullscreen: Boolean(req.fullscreen),
+    reportLeaving: Boolean(req.lock_on_leave),
+    blockClipboard: Boolean(req.block_clipboard),
     onViolation: report,
     onBlocked: blocked,
   });
@@ -432,27 +465,23 @@ export default function ExamRoom() {
   }
 
   const concealed = state.locked || needsFullscreen || needsShare;
+  const shown = concealed ? [] : questions;
   const answered = questions.filter((q) => isAnswered(answers[q.id])).length;
   const marked = questions.filter((q) => answers[q.id]?.marked).length;
+  const unchecked = questions.filter((q) => isAnswered(answers[q.id]) && !checkIsCurrent(runs[q.id], q, answers[q.id])).length;
+  const room = { info, state, stream, offsetRef, onExpire: () => submit("time"), onSubmit: () => setSubmitOpen(true), onTools: () => setToolsOpen(true) };
 
   return (
     <>
-      <ExamScreen
-        info={info}
-        state={state}
-        questions={concealed ? [] : questions}
-        answers={answers}
-        current={current}
-        visited={visited}
-        save={save}
-        stream={stream}
-        offsetRef={offsetRef}
-        onAnswer={updateAnswer}
-        onNavigate={navigateTo}
-        onExpire={() => submit("time")}
-        onSubmit={() => setSubmitOpen(true)}
-        onTools={() => setToolsOpen(true)}
-      />
+      {info.type === "internal" ? (
+        <PaperScreen {...room} questions={shown} />
+      ) : info.type === "external" ? (
+        <Suspense fallback={<PageLoader label="Opening the code editor…" />}>
+          <CodeScreen {...room} questions={shown} answers={answers} runs={runs} current={current} save={save} onAnswer={updateAnswer} onRun={runCode} onNavigate={navigateTo} onBlocked={blocked} />
+        </Suspense>
+      ) : (
+        <ExamScreen {...room} questions={shown} answers={answers} current={current} visited={visited} save={save} onAnswer={updateAnswer} onNavigate={navigateTo} />
+      )}
       {state.locked ? (
         <LockOverlay state={state} onUnlock={unlock} onRefresh={refreshPaper} />
       ) : needsShare || needsFullscreen ? (
@@ -463,7 +492,17 @@ export default function ExamRoom() {
           onFullscreen={() => enterFullscreen().catch(() => toast.error("Fullscreen was blocked. Try again."))}
         />
       ) : null}
-      <SubmitModal open={submitOpen} onClose={() => setSubmitOpen(false)} onConfirm={() => submit("manual")} submitting={submitting} answered={answered} total={questions.length} marked={marked} />
+      <SubmitModal
+        open={submitOpen}
+        onClose={() => setSubmitOpen(false)}
+        onConfirm={() => submit("manual")}
+        submitting={submitting}
+        examType={info.type}
+        answered={answered}
+        total={questions.length}
+        marked={marked}
+        unchecked={unchecked}
+      />
       <TeacherToolsModal open={toolsOpen} onClose={() => setToolsOpen(false)} onRefresh={refreshPaper} />
     </>
   );

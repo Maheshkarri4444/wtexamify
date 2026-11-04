@@ -32,6 +32,7 @@ func RegisterRoutes(r *gin.Engine) {
 		teacher.POST("/exams/:id/questions", addQuestions)
 		teacher.PUT("/exams/:id/questions/:qid", updateQuestion)
 		teacher.POST("/exams/:id/questions/delete", deleteQuestions)
+		teacher.POST("/exams/:id/questions/check", checkQuestion)
 
 		teacher.POST("/exams/:id/blueprint/preview", previewBlueprint)
 		teacher.PUT("/exams/:id/blueprint", saveBlueprint)
@@ -45,6 +46,7 @@ func RegisterRoutes(r *gin.Engine) {
 		teacher.GET("/exams/:id/results", results)
 		teacher.GET("/exams/:id/attempts/:aid", attemptDetail)
 		teacher.POST("/exams/:id/attempts/:aid/action", attemptAction)
+		teacher.POST("/exams/:id/attempts/:aid/marks", setMarks)
 	}
 
 	student := api.Group("/student", middleware.StudentMiddleware())
@@ -58,13 +60,16 @@ func RegisterRoutes(r *gin.Engine) {
 		student.POST("/attempts/:aid/unlock", unlockAttempt)
 		student.POST("/attempts/:aid/refresh", refreshAttempt)
 		student.POST("/attempts/:aid/submit", submitAttempt)
+		student.POST("/attempts/:aid/run", runCode)
 	}
 }
 
-// Start prepares indexes and runs the background sweeper that submits attempts
-// whose time ran out while the student's browser was closed or offline.
+// Start prepares indexes, starts the AI grading workers, and runs the background
+// sweeper that submits attempts whose time ran out while the student's browser
+// was closed or offline.
 func Start() {
 	ensureIndexes()
+	startGrader()
 	go func() {
 		ticker := time.NewTicker(20 * time.Second)
 		defer ticker.Stop()
