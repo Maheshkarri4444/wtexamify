@@ -2,7 +2,12 @@ package exams
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -205,12 +210,12 @@ func TestRetryDelayAndModelPause(t *testing.T) {
 	if retryDelay(`{"error":{"code":429}}`) != 0 {
 		t.Fatal("no hint means no delay")
 	}
-	pauseModel("test-model", 40*time.Millisecond)
-	if _, paused := modelPausedUntil("test-model"); !paused {
+	pause("test-model", 40*time.Millisecond)
+	if _, paused := pausedUntil("test-model"); !paused {
 		t.Fatal("a rate-limited model should rest")
 	}
 	time.Sleep(50 * time.Millisecond)
-	if _, paused := modelPausedUntil("test-model"); paused {
+	if _, paused := pausedUntil("test-model"); paused {
 		t.Fatal("the rest should end")
 	}
 	if shorterWait(0, 5*time.Second) != 5*time.Second || shorterWait(3*time.Second, 5*time.Second) != 3*time.Second {
@@ -239,5 +244,117 @@ func TestClipboardAlwaysAllowed(t *testing.T) {
 	}
 	if infoFor(e, "n210507@rguktn.ac.in").Requirements.BlockClipboard {
 		t.Error("the testing account should not have the clipboard blocked")
+	}
+}
+
+// fakeGemini answers like the Gemini API: reply(key, model) gives each
+// request's status and body, and it records which key and model were asked.
+func fakeGemini(t *testing.T, reply func(key, model string) (int, string)) *[]string {
+	t.Helper()
+	var mu sync.Mutex
+	asked := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get("x-goog-api-key")
+		model := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/"), ":generateContent")
+		mu.Lock()
+		asked = append(asked, key+"/"+model)
+		mu.Unlock()
+		status, body := reply(key, model)
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(server.Close)
+	previous := geminiURL
+	geminiURL = server.URL + "/"
+	t.Cleanup(func() { geminiURL = previous })
+	pauses.Range(func(k, _ any) bool {
+		pauses.Delete(k)
+		return true
+	})
+	return &asked
+}
+
+func geminiAnswer(percent int) string {
+	text, _ := json.Marshal(fmt.Sprintf(`{"percent": %d, "tests": [{"id": "t1", "executes": true}]}`, percent))
+	return fmt.Sprintf(`{"candidates": [{"content": {"parts": [{"text": %s}]}, "finishReason": "STOP"}]}`, text)
+}
+
+func TestAIKeysInOrderWithoutRepeats(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "first")
+	t.Setenv("GEMINI_BACKUP_API_KEYS", "second, first ,third")
+	if got := strings.Join(aiKeys(), ","); got != "first,second,third" {
+		t.Fatalf("aiKeys() = %s", got)
+	}
+	t.Setenv("GEMINI_API_KEY", "")
+	if got := strings.Join(aiKeys(), ","); got != "second,first,third" {
+		t.Fatalf("backup keys work on their own too, got %s", got)
+	}
+}
+
+func TestRefusedKeyHandsOverToTheBackup(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "expired")
+	t.Setenv("GEMINI_BACKUP_API_KEYS", "fresh")
+	t.Setenv("GEMINI_MODELS", "model-a,model-b")
+	asked := fakeGemini(t, func(key, _ string) (int, string) {
+		if key == "expired" {
+			return http.StatusBadRequest, `{"error": {"code": 400, "message": "API key expired. Please renew the API key.", "status": "INVALID_ARGUMENT", "details": [{"reason": "API_KEY_INVALID"}]}}`
+		}
+		return http.StatusOK, geminiAnswer(90)
+	})
+	verdict, err := checkWithAI(t.Context(), codeQuestion(), "sql", "select 1", "")
+	if err != nil || verdict.Percent != 90 || verdict.Model != "model-a" {
+		t.Fatalf("the backup key should answer with the best model: %+v %v", verdict, err)
+	}
+	if got := strings.Join(*asked, " "); got != "expired/model-a fresh/model-a" {
+		t.Fatalf("asked %s", got)
+	}
+	if _, resting := pausedUntil(keyName(0)); !resting {
+		t.Fatal("a refused key should rest")
+	}
+	*asked = (*asked)[:0]
+	if _, err := checkWithAI(t.Context(), codeQuestion(), "sql", "select 1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(*asked, " "); got != "fresh/model-a" {
+		t.Fatalf("a resting key isn't asked again, but asked %s", got)
+	}
+}
+
+func TestKeyOverQuotaTriesTheBackupBeforeAWeakerModel(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "busy")
+	t.Setenv("GEMINI_BACKUP_API_KEYS", "spare")
+	t.Setenv("GEMINI_MODELS", "model-a,model-b")
+	asked := fakeGemini(t, func(key, _ string) (int, string) {
+		if key == "busy" {
+			return http.StatusTooManyRequests, `{"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "details": [{"retryDelay": "40s"}]}}`
+		}
+		return http.StatusOK, geminiAnswer(75)
+	})
+	verdict, err := checkWithAI(t.Context(), codeQuestion(), "sql", "select 1", "")
+	if err != nil || verdict.Model != "model-a" || verdict.Percent != 75 {
+		t.Fatalf("the spare key should answer on the best model: %+v %v", verdict, err)
+	}
+	if got := strings.Join(*asked, " "); got != "busy/model-a spare/model-a" {
+		t.Fatalf("asked %s", got)
+	}
+	if _, resting := pausedUntil(pairName(0, "model-a")); !resting {
+		t.Fatal("the over-quota key and model should rest")
+	}
+	if _, resting := pausedUntil(keyName(0)); resting {
+		t.Fatal("being over quota on one model doesn't sideline the whole key")
+	}
+}
+
+func TestEveryKeyFailingIsReportedAsBusy(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "one")
+	t.Setenv("GEMINI_BACKUP_API_KEYS", "two")
+	t.Setenv("GEMINI_MODELS", "model-a")
+	fakeGemini(t, func(_, _ string) (int, string) {
+		return http.StatusTooManyRequests, `{"error": {"code": 429, "details": [{"retryDelay": "12s"}]}}`
+	})
+	_, err := checkWithAI(t.Context(), codeQuestion(), "sql", "select 1", "")
+	var busy *aiBusyError
+	if !errors.As(err, &busy) || busy.wait <= 0 || busy.wait > 12*time.Second {
+		t.Fatalf("expected a busy error with Google's suggested wait, got %v", err)
 	}
 }

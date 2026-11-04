@@ -20,7 +20,9 @@ import (
 )
 
 // Gemini checks code answers by dry-running them; nothing is compiled.
-// GEMINI_MODELS lists models to try in order (the first that answers wins), and
+// GEMINI_API_KEY is the key to use, and GEMINI_BACKUP_API_KEYS (comma-separated)
+// are tried in order when it fails; each key has its own quota. GEMINI_MODELS
+// lists models to try in order (the first that answers wins), and
 // GEMINI_CONCURRENCY caps simultaneous calls so a busy exam hall queues instead
 // of tripping the API's rate limits.
 
@@ -30,6 +32,7 @@ var defaultModels = []string{"gemini-3.5-flash", "gemini-3.1-flash-lite", "gemin
 
 var (
 	errAINotConfigured = errors.New("GEMINI_API_KEY is not set")
+	geminiURL          = "https://generativelanguage.googleapis.com/v1beta/models/"
 	errAIUnavailable   = errors.New("the AI checker is busy or unavailable")
 	aiSlots            = make(chan struct{}, aiConcurrency())
 	// A check normally answers in 3–10 s. Past 30 s the model is struggling, and
@@ -42,6 +45,19 @@ func aiConcurrency() int {
 		return n
 	}
 	return 8
+}
+
+// aiKeys are the Gemini keys in the order to try them, without repeats.
+func aiKeys() []string {
+	keys := []string{}
+	seen := map[string]bool{}
+	for _, key := range append([]string{config.Get("GEMINI_API_KEY", "")}, config.List("GEMINI_BACKUP_API_KEYS")...) {
+		if key = strings.TrimSpace(key); key != "" && !seen[key] {
+			seen[key] = true
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }
 
 func aiModels() []string {
@@ -117,9 +133,11 @@ func thinkingFor(model string) map[string]any {
 }
 
 // checkWithAI asks Gemini how correct the code is and which test cases it passes.
+// For each model, best first, it tries every key before settling for a weaker
+// model: a key that is over its quota or refused hands over to the next one.
 func checkWithAI(ctx context.Context, q Question, language, code, sharedContext string) (aiVerdict, error) {
-	key := config.Get("GEMINI_API_KEY", "")
-	if key == "" {
+	keys := aiKeys()
+	if len(keys) == 0 {
 		return aiVerdict{}, errAINotConfigured
 	}
 	select {
@@ -131,55 +149,76 @@ func checkWithAI(ctx context.Context, q Question, language, code, sharedContext 
 
 	prompt := checkPrompt(q, language, code, sharedContext)
 	var lastErr error
-	wait := time.Duration(0) // shortest pause before some model accepts requests again
+	wait := time.Duration(0) // shortest rest before some key and model accept requests again
 	for _, model := range aiModels() {
-		if ctx.Err() != nil {
-			break // out of time: the caller reports the checker as busy
-		}
-		if until, paused := modelPausedUntil(model); paused {
-			wait = shorterWait(wait, time.Until(until))
-			continue
-		}
-		thinking := thinkingFor(model)
-		for try := 0; try < 2; try++ {
-			verdict, retry, err := callGemini(ctx, key, model, prompt, thinking)
+		for k, key := range keys {
+			if ctx.Err() != nil {
+				// Out of time: the caller reports the checker as busy.
+				return aiVerdict{}, &aiBusyError{wait: wait, err: errors.Join(ctx.Err(), lastErr)}
+			}
+			if until, resting := pausedUntil(keyName(k)); resting {
+				wait = shorterWait(wait, time.Until(until))
+				continue
+			}
+			if until, resting := pausedUntil(pairName(k, model)); resting {
+				wait = shorterWait(wait, time.Until(until))
+				continue
+			}
+			verdict, err := tryModel(ctx, key, model, prompt)
 			if err == nil {
 				verdict.Model = model
 				return normalizeVerdict(verdict, q), nil
 			}
 			lastErr = err
+			var refused *keyError
 			var limited *rateLimitError
-			if errors.As(err, &limited) {
-				// Over quota: retrying now only burns more of it. Rest this model and move on.
-				pauseModel(model, limited.wait)
-				wait = shorterWait(wait, limited.wait)
-				break
-			}
 			var slow *slowModelError
-			if errors.As(err, &slow) {
-				pauseModel(model, slowModelPause)
+			switch {
+			case errors.As(err, &refused):
+				// Invalid, expired or revoked: no model will take this key for now.
+				pause(keyName(k), refusedKeyPause)
+			case errors.As(err, &limited):
+				// Over this key's quota: retrying now only burns more of it.
+				pause(pairName(k, model), limited.wait)
+				wait = shorterWait(wait, limited.wait)
+			case errors.As(err, &slow):
+				pause(pairName(k, model), slowModelPause)
 				wait = shorterWait(wait, slowModelPause)
-				break
 			}
-			if errors.Is(err, errThinkingUnsupported) && thinking != nil {
-				thinking = nil
-				continue
-			}
-			if !retry {
-				break
-			}
-			select {
-			case <-time.After(time.Duration(try+1) * time.Second):
-			case <-ctx.Done():
-				return aiVerdict{}, &aiBusyError{wait: wait, err: ctx.Err()}
-			}
+			log.Printf("ai: %s failed, trying the next key or model: %v", pairName(k, model), err)
 		}
-		log.Printf("ai: %s failed, trying the next model: %v", model, lastErr)
 	}
 	if lastErr == nil {
-		lastErr = errors.New("every model is resting after hitting its rate limit")
+		lastErr = errors.New("every key and model is resting after hitting a limit")
 	}
 	return aiVerdict{}, &aiBusyError{wait: wait, err: lastErr}
+}
+
+// tryModel asks one model with one key, trying once more after a hiccup.
+func tryModel(ctx context.Context, key, model, prompt string) (aiVerdict, error) {
+	thinking := thinkingFor(model)
+	var err error
+	for try := 0; try < 2; try++ {
+		var verdict aiVerdict
+		var retry bool
+		verdict, retry, err = callGemini(ctx, key, model, prompt, thinking)
+		if err == nil {
+			return verdict, nil
+		}
+		if errors.Is(err, errThinkingUnsupported) && thinking != nil {
+			thinking = nil
+			continue
+		}
+		if !retry {
+			return aiVerdict{}, err
+		}
+		select {
+		case <-time.After(time.Duration(try+1) * time.Second):
+		case <-ctx.Done():
+			return aiVerdict{}, err
+		}
+	}
+	return aiVerdict{}, err
 }
 
 var errThinkingUnsupported = errors.New("model rejected the thinking setting")
@@ -209,24 +248,53 @@ type slowModelError struct{ err error }
 
 func (e *slowModelError) Error() string { return "no answer in time: " + e.err.Error() }
 
-// Models that answered 429 rest until their quota window resets, so one busy
-// minute doesn't turn every student's check into more failed requests.
-var modelPauses sync.Map
+// keyError means Google refused the key itself: invalid, expired, revoked, or
+// not allowed to use the Gemini API. It rests long enough to stop retrying it
+// on every check, short enough that a fixed key comes back on its own.
+const refusedKeyPause = 10 * time.Minute
 
-func pauseModel(model string, wait time.Duration) {
+type keyError struct {
+	status  int
+	message string
+}
+
+func (e *keyError) Error() string {
+	return fmt.Sprintf("key refused: HTTP %d: %s", e.status, e.message)
+}
+
+// Rests, so one busy minute doesn't turn every student's check into more failed
+// requests: a key and model pair after a 429 (each key has its own quota) or
+// after it stopped answering, and a whole key after Google refused it. Keys are
+// named by position, so they never end up in a log.
+var pauses sync.Map
+
+func keyName(k int) string                { return fmt.Sprintf("key %d", k+1) }
+func pairName(k int, model string) string { return fmt.Sprintf("key %d · %s", k+1, model) }
+
+func pause(name string, wait time.Duration) {
 	if wait <= 0 {
 		wait = 30 * time.Second
 	}
-	modelPauses.Store(model, time.Now().Add(wait))
+	pauses.Store(name, time.Now().Add(wait))
 }
 
-func modelPausedUntil(model string) (time.Time, bool) {
-	if v, ok := modelPauses.Load(model); ok {
+func pausedUntil(name string) (time.Time, bool) {
+	if v, ok := pauses.Load(name); ok {
 		if until := v.(time.Time); time.Now().Before(until) {
 			return until, true
 		}
 	}
 	return time.Time{}, false
+}
+
+// refusedKey says whether an error response is about the key rather than the
+// model or the request.
+func refusedKey(status int, message string) bool {
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return true
+	}
+	lower := strings.ToLower(message)
+	return status == http.StatusBadRequest && (strings.Contains(lower, "api_key_invalid") || strings.Contains(lower, "api key not valid") || strings.Contains(lower, "api key expired"))
 }
 
 func shorterWait(current, candidate time.Duration) time.Duration {
@@ -262,7 +330,7 @@ func callGemini(ctx context.Context, key, model, prompt string, thinking map[str
 		"contents":          []map[string]any{{"role": "user", "parts": []map[string]string{{"text": prompt}}}},
 		"generationConfig":  generation,
 	})
-	url := "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent"
+	url := geminiURL + model + ":generateContent"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return aiVerdict{}, false, err
@@ -283,9 +351,12 @@ func callGemini(ctx context.Context, key, model, prompt string, thinking map[str
 		return aiVerdict{}, false, &rateLimitError{wait: retryDelay(string(raw)), body: model}
 	}
 	if resp.StatusCode != http.StatusOK {
-		message := strings.TrimSpace(string(raw))
+		message := strings.Join(strings.Fields(string(raw)), " ") // one line in the log
 		if len(message) > 300 {
 			message = message[:300]
+		}
+		if refusedKey(resp.StatusCode, string(raw)) {
+			return aiVerdict{}, false, &keyError{status: resp.StatusCode, message: message}
 		}
 		if resp.StatusCode == http.StatusBadRequest && strings.Contains(strings.ToLower(message), "thinking") {
 			return aiVerdict{}, false, errThinkingUnsupported

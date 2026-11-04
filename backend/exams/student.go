@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Maheshkarri4444/wtexamify/config.go"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -128,20 +127,12 @@ type attemptState struct {
 	Result           *studentResult     `json:"result"`
 }
 
-// Testing accounts that may always copy and paste, even in an exam that blocks
-// it. More can be added with PASTE_ALLOWED_EMAILS in .env.
-var pasteTesterEmails = []string{"n210507@rguktn.ac.in"}
+// The testing account: the only student who may always copy and paste, even in
+// an exam that blocks it.
+const pasteTesterEmail = "n210507@rguktn.ac.in"
 
 func clipboardAlwaysAllowed(email string) bool {
-	email = strings.TrimSpace(email)
-	for _, list := range [][]string{pasteTesterEmails, config.List("PASTE_ALLOWED_EMAILS")} {
-		for _, allowed := range list {
-			if strings.EqualFold(email, allowed) {
-				return true
-			}
-		}
-	}
-	return false
+	return strings.EqualFold(strings.TrimSpace(email), pasteTesterEmail)
 }
 
 // infoFor is what a student may know about an exam before and while writing it.

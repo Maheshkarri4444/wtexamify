@@ -238,8 +238,8 @@ function RunButton({ onRun, running, cooldownUntil, disabled }) {
   const now = useNow(500);
   const wait = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
   return (
-    <Button icon={running ? undefined : Play} loading={running} onClick={onRun} disabled={disabled || wait > 0}>
-      {running ? "Checking…" : wait > 0 ? `Run again in ${wait}s` : "Run"}
+    <Button size="sm" icon={running ? undefined : Play} loading={running} onClick={onRun} disabled={disabled || wait > 0} title="Run (Ctrl+Enter)" className="min-w-[5.5rem]">
+      {running ? "Checking…" : wait > 0 ? `Run in ${wait}s` : "Run"}
     </Button>
   );
 }
@@ -337,7 +337,7 @@ export default function CodeScreen({ info, state, questions, answers, runs, curr
             </section>
 
             <section className="flex min-h-[560px] flex-col lg:min-h-0">
-              <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
+              <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-line px-4 py-2">
                 {question.language === "any" ? (
                   <Select
                     aria-label="Language you're writing in"
@@ -358,9 +358,15 @@ export default function CodeScreen({ info, state, questions, answers, runs, curr
                   <Badge tone="primary">{languageLabel(question.language)}</Badge>
                 )}
                 {question.starter_code && <ResetButton onReset={() => onAnswer(question.id, { code: question.starter_code })} disabled={code === question.starter_code} />}
-                <span className="ml-auto hidden items-center gap-1 text-xs text-muted sm:flex">
-                  <Kbd>Ctrl</Kbd>+<Kbd>Enter</Kbd> runs
-                </span>
+                <div className="ml-auto flex items-center gap-3">
+                  <span className="hidden items-center gap-1 text-xs text-muted xl:flex">
+                    <Kbd>Ctrl</Kbd>+<Kbd>Enter</Kbd>
+                  </span>
+                  <span className="text-xs tabular-nums text-muted">
+                    {checksLeft === null ? "Unlimited checks" : checksLeft === 0 ? "No checks left" : `${checksLeft} of ${maxRuns} checks left`}
+                  </span>
+                  <RunButton onRun={runNow} running={running === question.id} cooldownUntil={cooldownUntil} disabled={Boolean(running) || (checksLeft === 0 && !upToDate)} />
+                </div>
               </div>
 
               <div className="relative min-h-[280px] flex-1">
@@ -385,10 +391,6 @@ export default function CodeScreen({ info, state, questions, answers, runs, curr
                   <CheckResult question={question} run={run} current={upToDate} stage={running === question.id ? "running" : revealing === question.id ? "private" : "done"} />
                 </div>
                 <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3">
-                  <RunButton onRun={runNow} running={running === question.id} cooldownUntil={cooldownUntil} disabled={Boolean(running) || (checksLeft === 0 && !upToDate)} />
-                  <span className="text-xs text-muted">
-                    {checksLeft === null ? "Unlimited checks" : checksLeft === 0 ? "No checks left for this question" : `${checksLeft} of ${maxRuns} checks left`}
-                  </span>
                   <div className="ml-auto flex gap-2">
                     <Button variant="secondary" icon={ChevronLeft} onClick={() => onNavigate(current - 1)} disabled={current === 0}>
                       Previous

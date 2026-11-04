@@ -69,13 +69,36 @@ function SearchBar({ query, setQuery, children }) {
   );
 }
 
+// Every student's sheet in one request. A server older than that endpoint
+// answers 404; then the sheets come one student at a time, a few at once.
+async function loadAnswerSheets(exam) {
+  try {
+    return await teacherApi.answerSheets(exam.id);
+  } catch (error) {
+    if (error.status !== 404) throw error;
+  }
+  const { rows } = await teacherApi.results(exam.id);
+  const attempts = rows.filter((r) => r.attempt_id).sort((a, b) => a.email.localeCompare(b.email));
+  const sheets = new Array(attempts.length);
+  let next = 0;
+  const fetchSome = async () => {
+    while (next < attempts.length) {
+      const i = next++;
+      const { student, items } = await teacherApi.attempt(exam.id, attempts[i].attempt_id);
+      sheets[i] = { student, items };
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, attempts.length) }, fetchSome));
+  return { exam: { title: exam.title, type: exam.type, duration_minutes: exam.duration_minutes }, sheets };
+}
+
 /** Every student's answer sheet (or, for an internal, question paper) in one PDF. */
 function AnswerSheetsButton({ exam, size = "md" }) {
   const [busy, setBusy] = useState(false);
   const download = async () => {
     setBusy(true);
     try {
-      const [{ downloadAnswerSheets }, data] = await Promise.all([import("../../lib/answerSheetsPdf"), teacherApi.answerSheets(exam.id)]);
+      const [{ downloadAnswerSheets }, data] = await Promise.all([import("../../lib/answerSheetsPdf"), loadAnswerSheets(exam)]);
       if (!data.sheets.length) {
         toast.error("No student has started yet, so there are no answer sheets.");
         return;

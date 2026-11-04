@@ -5,6 +5,7 @@ import { ArrowLeft, SearchX } from "lucide-react";
 import { Logo } from "../../components/layout/AppShell";
 import { PageLoader } from "../../components/ui/Feedback";
 import { studentApi } from "../../lib/api";
+import { getUser } from "../../lib/auth";
 import { isAnswered } from "../../lib/format";
 import { enterFullscreen, exitFullscreen, isFullscreen, isStreamLive, shareEntireScreen, stopStream } from "../../lib/proctor";
 import { checkIsCurrent } from "./room/codeAnswers";
@@ -41,6 +42,18 @@ const BLOCKED_MESSAGES = {
 const CLIPBOARD_KINDS = new Set(["copy", "cut", "paste", "contextmenu", "drop"]);
 const HEARTBEAT_MS = 10000;
 const SAVE_DELAY_MS = 1200;
+
+// n210507@rguktn.ac.in is the testing account: the only student who may always
+// copy and paste, even in an exam that blocks it. The server allows it too
+// (exams/student.go); checking here as well keeps it working against a server
+// that hasn't been restarted or deployed with that change yet.
+const PASTE_TESTER_EMAIL = "n210507@rguktn.ac.in";
+
+function forThisStudent(exam) {
+  const tester = String(getUser()?.email || "").trim().toLowerCase() === PASTE_TESTER_EMAIL;
+  if (!tester || !exam?.requirements?.block_clipboard) return exam;
+  return { ...exam, requirements: { ...exam.requirements, block_clipboard: false } };
+}
 
 const flagsNow = (stream) => ({ fullscreen: isFullscreen(), sharing: isStreamLive(stream), visible: document.visibilityState === "visible" });
 
@@ -86,7 +99,7 @@ export default function ExamRoom() {
   const applyPaper = useCallback(
     (paper) => {
       offsetRef.current = new Date(paper.state.server_now).getTime() - Date.now();
-      setInfo(paper.exam);
+      setInfo(forThisStudent(paper.exam));
       setQuestions(paper.questions || []);
       answersRef.current = paper.answers || {};
       dirtyRef.current = false;
@@ -283,7 +296,7 @@ export default function ExamRoom() {
       .get(examId)
       .then(async (data) => {
         if (cancelled) return;
-        setInfo(data.exam);
+        setInfo(forThisStudent(data.exam));
         setSummary(data.attempt);
         if (data.attempt?.status === "submitted") {
           const paper = await studentApi.attempt(data.attempt.id);
@@ -305,7 +318,7 @@ export default function ExamRoom() {
       studentApi
         .get(examId)
         .then((data) => {
-          setInfo(data.exam);
+          setInfo(forThisStudent(data.exam));
           setSummary(data.attempt);
         })
         .catch(() => {});
