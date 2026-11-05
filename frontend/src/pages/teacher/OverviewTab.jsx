@@ -11,7 +11,6 @@ import { formatMinutes, pluralize } from "../../lib/format";
 
 const CHECK_LINKS = { questions: "questions", sets: "sets", students: "students", duration: "settings", codes: "settings" };
 
-const VISIBILITY = { none: "Hidden until you share them", score: "Score shown after submitting", full: "Score and correct answers shown" };
 
 export default function OverviewTab() {
   const { bundle, setBundle } = useOutletContext();
@@ -46,7 +45,7 @@ export default function OverviewTab() {
     { icon: MonitorUp, label: "Proctoring", value: proctoring.length ? proctoring.join(" · ") : "Off" },
     s.max_violations > 0 || exam.type !== "internal" ? { icon: KeyRound, label: "Auto-submit", value: s.max_violations ? `After ${pluralize(s.max_violations, "violation")}` : "Never" } : null,
     exam.type === "external" && { icon: Sparkles, label: "AI checks", value: s.max_runs ? `${s.max_runs} per question` : "No limit" },
-    { icon: Trophy, label: "Results", value: exam.type === "internal" ? "Not marked in Examify" : VISIBILITY[s.result_visibility] },
+    { icon: Trophy, label: "Results", value: exam.type === "internal" ? "Not marked in Examify" : "Only you see scores" },
   ].filter(Boolean);
 
   return (

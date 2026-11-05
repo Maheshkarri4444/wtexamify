@@ -34,6 +34,12 @@ func checkAnswer(ctx context.Context, q Question, language, code, sharedContext 
 	return consistentVerdict(verdict), nil
 }
 
+// staleMatch says a saved check of code that matches the teacher's answer was
+// the AI's (made before answers were compared), so it's redone, at once.
+func staleMatch(q Question, language, code string, run RunResult) bool {
+	return run.Model != matchedModel && referenceSimilarity(language, q.Solution, code) >= nearMatch
+}
+
 func matchVerdict(q Question, similarity float64) aiVerdict {
 	verdict := aiVerdict{Percent: int(math.Round(similarity * 100)), Tests: make([]TestOutcome, 0, len(q.TestCases)), Model: matchedModel}
 	for _, t := range q.TestCases {
@@ -110,7 +116,8 @@ func codeTokens(language, code string) []string {
 	return tokens
 }
 
-// commonTokens is the length of the longest run of tokens the two share in order.
+// commonTokens counts the tokens the two share in the same order (their
+// longest common subsequence), with gaps allowed.
 func commonTokens(a, b []string) int {
 	prev := make([]int, len(b)+1)
 	cur := make([]int, len(b)+1)

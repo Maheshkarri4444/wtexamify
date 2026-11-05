@@ -20,7 +20,7 @@ export default function PaperScreen({ info, state, setContext, questions, stream
             <ScrollText className="h-5 w-5" />
           </span>
           <div className="min-w-0">
-            <p className="text-[13px] font-medium text-primary-text">Question paper · Set {state.set_number}</p>
+            <p className="text-[13px] font-medium text-primary-text">Question paper</p>
             <h1 className="mt-0.5 text-2xl font-semibold tracking-tight text-ink">{info.title}</h1>
             {questions.length > 0 && (
               <p className="mt-1 text-sm text-muted">
@@ -39,8 +39,8 @@ export default function PaperScreen({ info, state, setContext, questions, stream
 
         {questions.length > 0 && (setContext || info.context) && (
           <div className="mt-6 space-y-3">
-            <ContextSection title="Tables and data for your set" text={setContext} />
-            <ContextSection title="Tables and data for every question" text={info.context} />
+            <ContextSection title="Tables and data for your set" text={setContext} definitions={false} />
+            <ContextSection title="Tables and data for every question" text={info.context} definitions={false} />
           </div>
         )}
 
@@ -54,7 +54,7 @@ export default function PaperScreen({ info, state, setContext, questions, stream
                   <span className="ml-auto text-xs font-medium text-muted">{pluralize(question.marks, "mark")}</span>
                 </div>
                 <QuestionText text={question.text} className="text-[16px] leading-relaxed text-ink" />
-                {question.context && <ContextSection title="Tables and data for this question" text={question.context} className="mt-4" />}
+                {question.context && <ContextSection title="Tables and data for this question" text={question.context} definitions={false} className="mt-4" />}
               </Card>
             </li>
           ))}

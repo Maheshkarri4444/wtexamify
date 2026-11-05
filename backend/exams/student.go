@@ -50,19 +50,18 @@ type requirements struct {
 }
 
 type studentExamInfo struct {
-	ID               primitive.ObjectID `json:"id"`
-	Title            string             `json:"title"`
-	Type             string             `json:"type"`
-	Status           string             `json:"status"`
-	Instructions     string             `json:"instructions"`
-	Context          string             `json:"context"`
-	DurationMinutes  int                `json:"duration_minutes"`
-	QuestionsPerSet  int                `json:"questions_per_set"`
-	MaxViolations    int                `json:"max_violations"`
-	MaxRuns          int                `json:"max_runs"`
-	ResultVisibility string             `json:"result_visibility"`
-	Requirements     requirements       `json:"requirements"`
-	LiveAt           *time.Time         `json:"live_at"`
+	ID              primitive.ObjectID `json:"id"`
+	Title           string             `json:"title"`
+	Type            string             `json:"type"`
+	Status          string             `json:"status"`
+	Instructions    string             `json:"instructions"`
+	Context         string             `json:"context"`
+	DurationMinutes int                `json:"duration_minutes"`
+	QuestionsPerSet int                `json:"questions_per_set"`
+	MaxViolations   int                `json:"max_violations"`
+	MaxRuns         int                `json:"max_runs"`
+	Requirements    requirements       `json:"requirements"`
+	LiveAt          *time.Time         `json:"live_at"`
 }
 
 type attemptSummary struct {
@@ -70,39 +69,15 @@ type attemptSummary struct {
 	Status      string             `json:"status"`
 	Locked      bool               `json:"locked"`
 	SubmittedAt *time.Time         `json:"submitted_at"`
-	Score       *float64           `json:"score"`
-	MaxScore    *float64           `json:"max_score"`
-	Percent     *float64           `json:"percent"`
 	Grading     string             `json:"grading,omitempty"`
 }
 
-type reviewItem struct {
-	Number     int           `json:"number"`
-	Type       string        `json:"type"`
-	Text       string        `json:"text"`
-	Options    []PaperOption `json:"options"`
-	Selected   []int         `json:"selected"`
-	AnswerText string        `json:"answer_text"`
-	Correct    []int         `json:"correct"`
-	Accepted   []string      `json:"accepted"`
-	Status     string        `json:"status"`
-	Awarded    float64       `json:"awarded"`
-	Max        float64       `json:"max"`
-	// Code questions.
-	Language string        `json:"language,omitempty"`
-	Code     string        `json:"code,omitempty"`
-	Solution string        `json:"solution,omitempty"`
-	Percent  *int          `json:"percent,omitempty"`
-	Tests    []PaperTest   `json:"tests,omitempty"`
-	Outcomes []TestOutcome `json:"outcomes,omitempty"`
-}
-
+// studentResult is what a student learns after submitting: never a score,
+// which only their teacher sees. The empty review keeps pages from before
+// scores were hidden showing nothing either.
 type studentResult struct {
-	Visibility string       `json:"visibility"`
-	Score      *float64     `json:"score"`
-	MaxScore   *float64     `json:"max_score"`
-	Percent    *float64     `json:"percent"`
-	Review     []reviewItem `json:"review"`
+	Visibility string     `json:"visibility"`
+	Review     []struct{} `json:"review"`
 }
 
 type attemptState struct {
@@ -140,7 +115,7 @@ func infoFor(e *Exam, email string) studentExamInfo {
 	info := studentExamInfo{
 		ID: e.ID, Title: e.Title, Type: e.Type, Status: e.Status, Instructions: e.Instructions,
 		DurationMinutes: e.DurationMinutes, QuestionsPerSet: e.Blueprint.PerSet,
-		MaxViolations: e.Settings.MaxViolations, ResultVisibility: e.Settings.ResultVisibility,
+		MaxViolations: e.Settings.MaxViolations,
 		Requirements: requirements{
 			Fullscreen:           e.Settings.RequireFullscreen,
 			ScreenShare:          e.Settings.RequireScreenShare,
@@ -161,18 +136,11 @@ func summaryFor(e *Exam, att *Attempt) *attemptSummary {
 	if att == nil {
 		return nil
 	}
-	summary := &attemptSummary{ID: att.ID, Status: att.Status, Locked: att.Locked, SubmittedAt: att.SubmittedAt, Grading: att.Grading}
-	// An internal isn't marked here, and an external's score isn't final until the AI is done.
-	final := e.Type != TypeInternal && (att.Grading == "" || att.Grading == GradingDone)
-	if att.Status == AttemptSubmitted && e.Settings.ResultVisibility != VisibilityNone && final {
-		score, maxScore, pct := att.Score, att.MaxScore, percent(att.Score, att.MaxScore)
-		summary.Score, summary.MaxScore, summary.Percent = &score, &maxScore, &pct
-	}
-	return summary
+	// No score: students never see one, only their teacher does.
+	return &attemptSummary{ID: att.ID, Status: att.Status, Locked: att.Locked, SubmittedAt: att.SubmittedAt, Grading: att.Grading}
 }
 
 // stateFor is everything the exam room needs to know besides the questions.
-// For a submitted attempt with full results, e must include the question bank.
 func stateFor(e *Exam, att *Attempt) attemptState {
 	state := attemptState{
 		ID: att.ID, ExamID: att.ExamID, Status: att.Status, Locked: att.Locked, LockReason: att.LockReason,
@@ -186,43 +154,7 @@ func stateFor(e *Exam, att *Attempt) attemptState {
 	if att.Status != AttemptSubmitted {
 		return state
 	}
-	result := &studentResult{Visibility: e.Settings.ResultVisibility, Review: []reviewItem{}}
-	if e.Type == TypeInternal {
-		result.Visibility = VisibilityNone
-	}
-	if result.Visibility != VisibilityNone {
-		score, maxScore, pct := att.Score, att.MaxScore, percent(att.Score, att.MaxScore)
-		result.Score, result.MaxScore, result.Percent = &score, &maxScore, &pct
-	}
-	if result.Visibility == VisibilityFull {
-		byID := questionMap(e)
-		graded := map[string]QuestionResult{}
-		for _, r := range att.Results {
-			graded[r.QuestionID] = r
-		}
-		for _, pq := range paperQuestions(e, att) {
-			q := byID[pq.ID]
-			answer := att.Answers[pq.ID]
-			r := graded[pq.ID]
-			selected := answer.Selected
-			if selected == nil {
-				selected = []int{}
-			}
-			item := reviewItem{
-				Number: pq.Number, Type: pq.Type, Text: pq.Text, Options: pq.Options,
-				Selected: selected, AnswerText: answer.Text, Correct: q.Correct, Accepted: q.Answers,
-				Status: r.Status, Awarded: r.Awarded, Max: r.Max,
-			}
-			if q.Type == QCode {
-				item.Language, item.Code, item.Solution, item.Percent, item.Tests = answerLanguage(q, answer), answer.Code, q.Solution, r.Percent, allTests(q)
-				if run, ok := att.Runs[pq.ID]; ok && run.CodeHash == codeHash(answerLanguage(q, answer), answer.Code) {
-					item.Outcomes = run.Tests
-				}
-			}
-			result.Review = append(result.Review, item)
-		}
-	}
-	state.Result = result
+	state.Result = &studentResult{Visibility: VisibilityNone, Review: []struct{}{}}
 	return state
 }
 
@@ -467,12 +399,9 @@ func getAttempt(c *gin.Context) {
 	respondPaper(c, exam, att)
 }
 
-// examForState loads only what stateFor needs: the full exam once results with
-// a review are due, otherwise just the settings.
+// examForState loads only what stateFor needs: the settings, never the
+// question bank (students get no review or score after submitting).
 func examForState(ctx context.Context, att *Attempt) (*Exam, error) {
-	if att.Status == AttemptSubmitted {
-		return loadExamByID(ctx, att.ExamID)
-	}
 	return findExam(ctx, bson.M{"_id": att.ExamID}, liteExamProjection)
 }
 

@@ -438,3 +438,66 @@ func TestPLSQLIsALanguage(t *testing.T) {
 		t.Fatalf("an unknown language should be named, with the ones the server knows: %v", err)
 	}
 }
+
+func TestPastedTeachersAnswerPassesWithoutTheAI(t *testing.T) {
+	asked := fakeGemini(t, func(string, string) (int, string) {
+		t.Error("the AI shouldn't be asked about a copy of the teacher's answer")
+		return http.StatusInternalServerError, "{}"
+	})
+	t.Setenv("GEMINI_API_KEY", "key")
+	pasted := "-- my answer\nselect NAME\n  from Employees\n where dept = 'CSE'"
+	verdict, err := checkAnswer(t.Context(), codeQuestion(), "sql", pasted, "")
+	if err != nil || verdict.Percent != 100 || len(verdict.Tests) != 2 || !allExecute(verdict.Tests) || verdict.Model != matchedModel {
+		t.Fatalf("the teacher's answer, respaced and recased, should pass every test at 100%%: %+v, %v", verdict, err)
+	}
+	if len(*asked) != 0 {
+		t.Fatalf("asked the AI: %v", *asked)
+	}
+	plsql := "DECLARE\n  n NUMBER := &n; -- read n\nBEGIN\n  DBMS_OUTPUT.PUT_LINE(n);\nEND;\n/"
+	if got := referenceSimilarity("plsql", plsql, "declare n number := &n;\nbegin dbms_output.put_line(n); end;"); got != 1 {
+		t.Fatalf("PL/SQL without its comment and closing slash should match exactly, got %.2f", got)
+	}
+}
+
+func TestNearlyTheTeachersAnswerPasses(t *testing.T) {
+	q := Question{Type: QCode, Language: "sql", Solution: "SELECT D_no, SUM(Salary) AS total_salary FROM Employee GROUP BY D_no ORDER BY D_no;", TestCases: []TestCase{{ID: "t1", Output: "D_NO | TOTAL"}}}
+	code := "select d_no, sum(salary) as total from employee group by d_no order by d_no"
+	similarity := referenceSimilarity("sql", q.Solution, code)
+	if similarity < nearMatch || similarity >= 1 {
+		t.Fatalf("a renamed alias should be a near match, got %.2f", similarity)
+	}
+	verdict, err := checkAnswer(t.Context(), q, "sql", code, "")
+	if err != nil || verdict.Percent < 90 || !allExecute(verdict.Tests) {
+		t.Fatalf("a near match should pass: %+v, %v", verdict, err)
+	}
+	if referenceSimilarity("sql", "SELECT * FROM d WHERE name = 'Research'", "select * from d where name = 'research'") == 1 {
+		t.Fatal("quoted data keeps its case, so 'research' isn't an exact match for 'Research'")
+	}
+}
+
+func TestPassingEveryTestKeepsThePercentHigh(t *testing.T) {
+	fakeGemini(t, func(string, string) (int, string) {
+		text, _ := json.Marshal(`{"percent": 60, "tests": [{"id": "t1", "executes": true}, {"id": "t2", "executes": true}]}`)
+		return http.StatusOK, fmt.Sprintf(`{"candidates": [{"content": {"parts": [{"text": %s}]}, "finishReason": "STOP"}]}`, text)
+	})
+	t.Setenv("GEMINI_API_KEY", "key")
+	t.Setenv("GEMINI_MODELS", "model-a")
+	verdict, err := checkAnswer(t.Context(), codeQuestion(), "sql", "SELECT e.name FROM employees e WHERE e.dept IN ('CSE')", "")
+	if err != nil || verdict.Percent != 90 || !allExecute(verdict.Tests) {
+		t.Fatalf("code that passes every test should show at least 90%%: %+v, %v", verdict, err)
+	}
+}
+
+func TestOldAICheckOfAMatchingAnswerIsRedone(t *testing.T) {
+	q := codeQuestion()
+	old := RunResult{Percent: 60, Model: "model-a"}
+	if !staleMatch(q, "sql", q.Solution, old) {
+		t.Fatal("an AI check of the teacher's own answer should be redone by comparing")
+	}
+	if staleMatch(q, "sql", q.Solution, RunResult{Percent: 100, Model: matchedModel}) {
+		t.Fatal("a comparison's result stands")
+	}
+	if staleMatch(q, "sql", "SELECT 1 FROM dual", old) {
+		t.Fatal("the AI's check of a different answer stands")
+	}
+}

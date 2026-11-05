@@ -139,7 +139,7 @@ type Assignment struct {
 type Settings struct {
 	ShuffleQuestions     bool   `bson:"shuffle_questions" json:"shuffle_questions"`
 	ShuffleOptions       bool   `bson:"shuffle_options" json:"shuffle_options"`
-	ResultVisibility     string `bson:"result_visibility" json:"result_visibility"`
+	ResultVisibility     string `bson:"result_visibility" json:"result_visibility"` // no longer shown to students: scores stay with the teacher
 	MultiScoring         string `bson:"multi_scoring" json:"multi_scoring"`
 	MaxViolations        int    `bson:"max_violations" json:"max_violations"` // 0 = never auto-submit
 	RequireFullscreen    bool   `bson:"require_fullscreen" json:"require_fullscreen"`
@@ -283,9 +283,9 @@ func defaultSettings(examType string) Settings {
 	settings := Settings{
 		ShuffleQuestions:     true,
 		ShuffleOptions:       true,
-		ResultVisibility:     VisibilityScore,
+		ResultVisibility:     VisibilityNone,
 		MultiScoring:         MultiStrict,
-		MaxViolations:        3,
+		MaxViolations:        5,
 		RequireFullscreen:    true,
 		RequireScreenShare:   true,
 		BlockExtendedDisplay: true,

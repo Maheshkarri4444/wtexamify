@@ -9,7 +9,7 @@ import { EmptyState, Skeleton } from "../../components/ui/Feedback";
 import { cn } from "../../lib/cn";
 import { studentApi } from "../../lib/api";
 import { getUser } from "../../lib/auth";
-import { firstName, formatMinutes, formatNumber, rollFromEmail, timeAgo } from "../../lib/format";
+import { firstName, formatMinutes, rollFromEmail, timeAgo } from "../../lib/format";
 import { usePolling } from "../../lib/hooks";
 
 function Requirements({ exam }) {
@@ -74,26 +74,13 @@ function SmallCard({ card }) {
   const submitted = attempt?.status === "submitted";
   const missed = exam.status === "ended" && !attempt;
   let badge;
-  if (submitted && attempt.grading === "pending") {
+  // No score here: students never see one, only their teacher does.
+  if (submitted) {
     badge = (
-      <Badge tone="info" icon={Hourglass}>
-        Being checked
+      <Badge tone="success" icon={CheckCircle2}>
+        {exam.type === "internal" ? "Finished" : "Submitted"}
       </Badge>
     );
-  } else if (submitted) {
-    badge =
-      attempt.percent !== null && attempt.percent !== undefined ? (
-        <span className="text-right">
-          <span className="block text-lg font-semibold text-ink">{formatNumber(attempt.percent)}%</span>
-          <span className="block text-xs text-muted">
-            {formatNumber(attempt.score)} / {formatNumber(attempt.max_score)}
-          </span>
-        </span>
-      ) : (
-        <Badge tone="success" icon={CheckCircle2}>
-          {exam.type === "internal" ? "Finished" : "Submitted"}
-        </Badge>
-      );
   } else if (missed) {
     badge = <Badge>Missed</Badge>;
   } else if (exam.status === "ended") {

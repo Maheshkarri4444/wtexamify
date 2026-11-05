@@ -147,7 +147,7 @@ func runCode(c *gin.Context) {
 	}
 	hash := codeHash(language, req.Code)
 	previous, hasPrevious := att.Runs[req.QuestionID]
-	if hasPrevious && previous.CodeHash == hash {
+	if hasPrevious && previous.CodeHash == hash && !staleMatch(q, language, req.Code, previous) {
 		// Same code as last time: the same verdict, without spending a check.
 		if _, err := attemptsCol().UpdateOne(ctx, inProgress, bson.M{"$set": saveAnswer}); err != nil {
 			respondErr(c, err)
@@ -182,7 +182,7 @@ func runCode(c *gin.Context) {
 		return
 	}
 
-	verdict, err := checkWithAI(ctx, q, language, req.Code, contextFor(exam, att.SetNumber, q))
+	verdict, err := checkAnswer(ctx, q, language, req.Code, contextFor(exam, att.SetNumber, q))
 	if err != nil {
 		respondErr(c, aiErrorResponse(err))
 		return
@@ -244,10 +244,13 @@ func checkQuestion(c *gin.Context) {
 			language = "other"
 		}
 	}
+	// Always the AI, even for the teacher's own answer, so they see how it reads
+	// the question. Students' code that matches this answer passes without it.
 	verdict, err := checkWithAI(ctx, q, language, code, contextFor(exam, q.Set, q))
 	if err != nil {
 		respondErr(c, aiErrorResponse(err))
 		return
 	}
+	verdict = consistentVerdict(verdict)
 	c.JSON(http.StatusOK, gin.H{"percent": verdict.Percent, "tests": verdict.Tests, "model": verdict.Model})
 }

@@ -237,12 +237,6 @@ const ExamWorkspace = () => {
         </div>
       </div>
 
-      {exam.content_locked && (
-        <Callout tone="warning" icon={Lock} className="mt-5" title={`${pluralize(stats.started, "student")} started, so questions, blueprint and sets are locked`}>
-          Every paper stays exactly as it was dealt. You can still add students, change the time and settings, and use the teacher codes.
-        </Callout>
-      )}
-
       <nav className="mt-6 flex gap-1 overflow-x-auto border-b border-line" aria-label="Exam sections">
         {TABS.map((tab) => (
           <NavLink

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import toast from "react-hot-toast";
-import { FileText, KeyRound, Lock, MonitorUp, Shuffle, Trophy } from "lucide-react";
+import { FileText, KeyRound, Lock, MonitorUp, ShieldAlert, Shuffle, Trophy } from "lucide-react";
 import { TeacherCodes } from "../../components/exam/ExamBits";
 import { Button } from "../../components/ui/Button";
 import { Card, CardHeader } from "../../components/ui/Card";
@@ -82,6 +82,58 @@ export default function SettingsTab() {
   return (
     <div className="mx-auto max-w-3xl space-y-6 pb-16">
       <Card>
+        <CardHeader icon={KeyRound} title="Teacher codes" info="The copy code unlocks a student whose paper locked. The refresh code gives a student a new set and clears their answers. Type them on the student's laptop yourself; don't read them out." description="Use the generated codes, or type your own below (4–20 letters or digits). A box left empty keeps its code." />
+        <div className="space-y-5 p-5">
+          <TeacherCodes settings={exam.settings} onRegenerate={regenerate} busy={codesBusy} />
+          <div className="grid gap-4 border-t border-line pt-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <Field label="Custom copy code" info="Type your own copy code and save it. The old one stops working at once." error={validCode(codes.copy_code) ? "" : "4–20 letters or digits"}>
+              {(id) => (
+                <Input
+                  id={id}
+                  value={codes.copy_code}
+                  onChange={(e) => setCodes({ ...codes, copy_code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "") })}
+                  maxLength={20}
+                  autoComplete="off"
+                  placeholder="Type a new code"
+                  className="font-mono uppercase tracking-widest placeholder:font-sans placeholder:normal-case placeholder:tracking-normal"
+                />
+              )}
+            </Field>
+            <Field label="Custom refresh code" info="Type your own refresh code and save it. The old one stops working at once." error={validCode(codes.refresh_code) ? "" : "4–20 letters or digits"}>
+              {(id) => (
+                <Input
+                  id={id}
+                  value={codes.refresh_code}
+                  onChange={(e) => setCodes({ ...codes, refresh_code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "") })}
+                  maxLength={20}
+                  autoComplete="off"
+                  placeholder="Type a new code"
+                  className="font-mono uppercase tracking-widest placeholder:font-sans placeholder:normal-case placeholder:tracking-normal"
+                />
+              )}
+            </Field>
+            <Button variant="secondary" onClick={saveCodes} loading={codesBusy} disabled={!codesDirty || !codesValid}>
+              Save codes
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader icon={ShieldAlert} title="Violations" info="A violation is a tab switch, a fullscreen exit or a stopped share. Each one locks the paper until you unlock it." />
+        <div className="flex items-center justify-between gap-6 p-5">
+          <div>
+            <div className="text-sm font-medium text-ink">
+              Auto-submit after violations
+              <InfoTip text="After this many violations the paper is submitted with whatever the student has answered. 0 means a violation only ever locks the paper." className="ml-1.5" />
+            </div>
+            <div className="mt-0.5 text-[13px] leading-snug text-muted">Each tab switch, fullscreen exit or stopped share is one violation. 0 means never auto-submit.</div>
+          </div>
+          <Stepper value={s.max_violations} onChange={(v) => setSetting("max_violations", v)} min={0} max={20} label="Violations" />
+        </div>
+      </Card>
+
+      <Card>
         <CardHeader icon={FileText} title="Exam details" info="What students see about the exam, and how long each of them gets." />
         <div className="space-y-5 p-5">
           <Field label="Name" info="Shown to students on their exam list and in the exam room.">{(id) => <Input id={id} value={form.title} maxLength={120} onChange={(e) => setForm({ ...form, title: e.target.value })} />}</Field>
@@ -142,22 +194,12 @@ export default function SettingsTab() {
               description="Reloading or reopening the exam locks it, so closing the tab can't be used to look something up."
             />
           </div>
-          <div className="flex items-center justify-between gap-6 p-5">
-            <div>
-              <div className="text-sm font-medium text-ink">
-                Auto-submit after violations
-                <InfoTip text="After this many violations the paper is submitted with whatever the student has answered. 0 means a violation only ever locks the paper." className="ml-1.5" />
-              </div>
-              <div className="mt-0.5 text-[13px] leading-snug text-muted">Each tab switch, fullscreen exit or stopped share is one violation. 0 means never auto-submit.</div>
-            </div>
-            <Stepper value={s.max_violations} onChange={(v) => setSetting("max_violations", v)} min={0} max={20} label="Violations" />
-          </div>
         </div>
       </Card>
 
       {exam.type !== "internal" && (
       <Card>
-        <CardHeader icon={Trophy} title="Scoring and results" info="How answers are marked, and what students see once they submit." />
+        <CardHeader icon={Trophy} title="Scoring" info="How answers are marked. Students never see their score: you see every mark in Results." description="Students don't see a score after submitting. Every mark is in Results." />
         <div className="space-y-6 p-5">
           {exam.type === "viva" && (
           <Field label="Multiple-correct questions" info="How a partly right answer to a multiple-correct question is marked. It never goes below 0." hint={s.multi_scoring === "strict" ? "Any wrong tick scores 0 for that question. Otherwise marks are shared by correct ticks: 2 of 3 correct = 2/3 of the marks." : "Each wrong tick cancels a right one: 2 right and 1 wrong of 3 correct = 1/3 of the marks. Never below 0."}>
@@ -186,17 +228,6 @@ export default function SettingsTab() {
               <Stepper value={s.max_runs} onChange={(v) => setSetting("max_runs", v)} min={0} max={200} label="Checks per question" />
             </div>
           )}
-          <Field label="After submitting, students see" info="Nothing, just their score, or their score with the correct answer to every question.">
-            <Segmented
-              value={s.result_visibility}
-              onChange={(v) => setSetting("result_visibility", v)}
-              options={[
-                { value: "none", label: "Nothing" },
-                { value: "score", label: "Their score" },
-                { value: "full", label: "Score and answers" },
-              ]}
-            />
-          </Field>
           <Switch checked={s.clear_answers_on_unlock} onChange={(v) => setSetting("clear_answers_on_unlock", v)} label="Clear answers when unlocking" info="After a violation, the student restarts the same paper with every answer cleared." description="After a violation, the student starts the same paper again from blank." />
         </div>
       </Card>
@@ -220,44 +251,6 @@ export default function SettingsTab() {
               <Switch checked={s.shuffle_options} onChange={(v) => setSetting("shuffle_options", v)} label="Shuffle option order" info="Each student sees every MCQ's options in a different order. Marking isn't affected." />
             </div>
           )}
-        </div>
-      </Card>
-
-      <Card>
-        <CardHeader icon={KeyRound} title="Teacher codes" info="The copy code unlocks a student whose paper locked. The refresh code gives a student a new set and clears their answers. Type them on the student's laptop yourself; don't read them out." description="Use the generated codes, or type your own below (4–20 letters or digits). A box left empty keeps its code." />
-        <div className="space-y-5 p-5">
-          <TeacherCodes settings={exam.settings} onRegenerate={regenerate} busy={codesBusy} />
-          <div className="grid gap-4 border-t border-line pt-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-            <Field label="Custom copy code" info="Type your own copy code and save it. The old one stops working at once." error={validCode(codes.copy_code) ? "" : "4–20 letters or digits"}>
-              {(id) => (
-                <Input
-                  id={id}
-                  value={codes.copy_code}
-                  onChange={(e) => setCodes({ ...codes, copy_code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "") })}
-                  maxLength={20}
-                  autoComplete="off"
-                  placeholder="Type a new code"
-                  className="font-mono uppercase tracking-widest placeholder:font-sans placeholder:normal-case placeholder:tracking-normal"
-                />
-              )}
-            </Field>
-            <Field label="Custom refresh code" info="Type your own refresh code and save it. The old one stops working at once." error={validCode(codes.refresh_code) ? "" : "4–20 letters or digits"}>
-              {(id) => (
-                <Input
-                  id={id}
-                  value={codes.refresh_code}
-                  onChange={(e) => setCodes({ ...codes, refresh_code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "") })}
-                  maxLength={20}
-                  autoComplete="off"
-                  placeholder="Type a new code"
-                  className="font-mono uppercase tracking-widest placeholder:font-sans placeholder:normal-case placeholder:tracking-normal"
-                />
-              )}
-            </Field>
-            <Button variant="secondary" onClick={saveCodes} loading={codesBusy} disabled={!codesDirty || !codesValid}>
-              Save codes
-            </Button>
-          </div>
         </div>
       </Card>
 

@@ -1,16 +1,10 @@
 import { useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { Activity, FlaskConical, Layers3, ShieldCheck } from "lucide-react";
-import { Logo, ThemeToggle } from "../components/layout/AppShell";
+import { FlaskConical } from "lucide-react";
+import { ExamifyMark, ThemeToggle } from "../components/layout/AppShell";
 import { authApi } from "../lib/api";
 import { getToken, getUser, homeFor } from "../lib/auth";
-
-const FEATURES = [
-  { icon: Layers3, title: "Unique sets for every student", text: "Built from your question bank, balanced by difficulty, dealt out before the exam." },
-  { icon: ShieldCheck, title: "Proctored like NPTEL", text: "Fullscreen, entire-screen sharing and teacher codes for every lock and refresh." },
-  { icon: Activity, title: "Live and graded on submit", text: "Watch every student live; scores and question analysis the moment they finish." },
-];
 
 function GoogleMark() {
   return (
@@ -23,6 +17,7 @@ function GoogleMark() {
   );
 }
 
+/** The front page: the name, what it's for, and Google sign-in. Nothing else. */
 const Login = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -44,69 +39,32 @@ const Login = () => {
   };
 
   return (
-    <div className="grid min-h-screen bg-canvas lg:grid-cols-[1.05fr_1fr]">
-      <section className="relative hidden overflow-hidden bg-[#0f0d2e] p-12 text-white lg:flex lg:flex-col">
-        <div className="pointer-events-none absolute -left-32 -top-32 h-[28rem] w-[28rem] rounded-full bg-indigo-500/40 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-40 right-[-6rem] h-[30rem] w-[30rem] rounded-full bg-violet-500/30 blur-3xl" />
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:24px_24px]" />
-        <div className="relative flex items-center gap-2.5">
-          <Logo compact />
-          <span className="text-lg font-bold tracking-tight">Examify</span>
-          <span className="rounded-md bg-white/10 px-1.5 py-px text-[11px] font-semibold text-indigo-100 ring-1 ring-inset ring-white/15">2.0</span>
-        </div>
-        <div className="relative mt-auto max-w-lg">
-          <p className="text-sm font-medium text-indigo-200">RGUKT Nuzvid · Online exams</p>
-          <h1 className="mt-3 text-[40px] font-semibold leading-[1.1] tracking-tight">Vivas your students can't game, results you don't have to mark.</h1>
-          <div className="mt-10 space-y-5">
-            {FEATURES.map(({ icon: Icon, title, text }) => (
-              <div key={title} className="flex gap-4">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-inset ring-white/15">
-                  <Icon className="h-5 w-5 text-indigo-100" />
-                </span>
-                <div>
-                  <div className="font-semibold">{title}</div>
-                  <div className="mt-0.5 text-sm leading-relaxed text-indigo-100/80">{text}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <p className="mt-12 text-xs text-indigo-200/70">Used for real exams with 480+ students across Web Technologies, COA, DBMS and OS.</p>
-        </div>
-      </section>
-
-      <section className="relative flex flex-col px-6 py-8 sm:px-10">
-        <div className="flex items-center justify-between">
-          <span className="lg:invisible">
-            <Logo />
-          </span>
-          <ThemeToggle />
-        </div>
-        <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center py-12">
-          <h2 className="text-[28px] font-semibold tracking-tight text-ink">Sign in</h2>
-          <p className="mt-2 text-[15px] leading-relaxed text-muted">Students use their RGUKT Google account. Teachers use the account their access was set up with.</p>
-          <button
-            type="button"
-            onClick={signIn}
-            className="mt-8 flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-line bg-surface text-[15px] font-semibold text-ink shadow-sm transition hover:border-line-strong hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 active:translate-y-px"
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-canvas px-6 py-12">
+      <div className="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
+      <main className="w-full max-w-sm rounded-2xl border border-line bg-surface px-8 py-10 text-center shadow-card">
+        <ExamifyMark className="mx-auto h-16 w-16 drop-shadow-sm" />
+        <h1 className="mt-6 text-3xl font-semibold tracking-tight text-ink">Examify</h1>
+        <p className="mt-2 text-[15px] text-muted">CSE – Proctored Lab Exam Application</p>
+        <button
+          type="button"
+          onClick={signIn}
+          className="mt-9 flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-line bg-surface text-[15px] font-semibold text-ink shadow-sm transition hover:border-line-strong hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 active:translate-y-px"
+        >
+          <GoogleMark />
+          Sign in with Google
+        </button>
+        {import.meta.env.DEV && (
+          <Link
+            to="/dev"
+            className="mt-6 flex items-center justify-center gap-2 rounded-xl border border-dashed border-warning/50 bg-warning-soft px-4 py-2.5 text-[13px] font-medium text-warning-text transition hover:border-warning"
           >
-            <GoogleMark />
-            Continue with Google
-          </button>
-          <p className="mt-4 text-center text-xs leading-relaxed text-muted">
-            Only <span className="font-medium text-ink-2">@rguktn.ac.in</span> accounts and approved teachers can sign in.
-          </p>
-          {import.meta.env.DEV && (
-            <Link
-              to="/dev"
-              className="mt-10 flex items-center justify-center gap-2 rounded-xl border border-dashed border-warning/50 bg-warning-soft px-4 py-3 text-sm font-medium text-warning-text transition hover:border-warning"
-            >
-              <FlaskConical className="h-4 w-4" />
-              Developer login (local testing only)
-            </Link>
-          )}
-        </div>
-        <p className="text-center text-xs text-muted">Examify · Built for RGUKT</p>
-      </section>
+            <FlaskConical className="h-4 w-4" />
+            Developer login (local testing only)
+          </Link>
+        )}
+      </main>
     </div>
   );
 };

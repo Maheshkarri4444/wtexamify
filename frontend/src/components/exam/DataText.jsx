@@ -35,11 +35,13 @@ export function DataTable({ title, header, rows, className }) {
   );
 }
 
+// CREATE TABLE statements: long, and the tables themselves show the columns.
+const isDefinition = (text) => /^\s*create\s/i.test(text) && text.includes("\n");
+
 function TextBlock({ text }) {
-  // CREATE TABLE statements are long and the tables below show the columns, so they start folded.
-  const definitions = /^\s*create\s/i.test(text) && text.includes("\n");
+  // Definitions start folded.
   const [open, setOpen] = useState(false);
-  if (definitions) {
+  if (isDefinition(text)) {
     return (
       <div className="rounded-lg border border-line">
         <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12.5px] font-medium text-ink-2">
@@ -53,9 +55,14 @@ function TextBlock({ text }) {
   return <pre className="whitespace-pre-wrap break-words rounded-lg bg-subtle/70 px-3 py-2 font-mono text-[12.5px] leading-relaxed text-ink">{text}</pre>;
 }
 
-/** Text with tables in it, such as a schema with its rows, or a query's expected output. */
-export function DataText({ text, sql = false, className }) {
-  const blocks = parseBlocks(text, { sql });
+/**
+ * Text with tables in it, such as a schema with its rows, or a query's expected
+ * output. With definitions off (students), CREATE TABLE statements are left out
+ * whenever the tables themselves are shown.
+ */
+export function DataText({ text, sql = false, definitions = true, className }) {
+  let blocks = parseBlocks(text, { sql });
+  if (!definitions && blocks.some((block) => block.kind === "table")) blocks = blocks.filter((block) => block.kind === "table" || !isDefinition(block.text));
   return (
     <div className={cn("space-y-3", className)}>
       {blocks.map((block, i) => (block.kind === "table" ? <DataTable key={i} {...block} /> : <TextBlock key={i} text={block.text} />))}
@@ -78,7 +85,7 @@ export function OutputBlock({ label, text, sql = false, className }) {
 }
 
 /** A folding section of tables and data: for the whole exam, a set or one question. */
-export function ContextSection({ title, text, sql = true, defaultOpen = true, className }) {
+export function ContextSection({ title, text, sql = true, definitions = true, defaultOpen = true, className }) {
   const [open, setOpen] = useState(defaultOpen);
   if (!text) return null;
   return (
@@ -88,7 +95,7 @@ export function ContextSection({ title, text, sql = true, defaultOpen = true, cl
         {title}
         <ChevronDown className={cn("ml-auto h-4 w-4 text-muted transition", open && "rotate-180")} />
       </button>
-      {open && <DataText text={text} sql={sql} className="border-t border-line px-4 py-3" />}
+      {open && <DataText text={text} sql={sql} definitions={definitions} className="border-t border-line px-4 py-3" />}
     </section>
   );
 }

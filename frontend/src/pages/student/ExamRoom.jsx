@@ -135,7 +135,7 @@ export default function ExamRoom() {
           applyPaper(paper);
           toast(
             paper.state.set_number !== previous.set_number
-              ? `Your teacher gave you set ${paper.state.set_number}. Start again from question 1.`
+              ? "Your teacher gave you a new set. Start again from question 1."
               : "Your answers were cleared. Start again from question 1.",
             { icon: "🔄", duration: 6000 }
           );
@@ -456,7 +456,7 @@ export default function ExamRoom() {
       const paper = await studentApi.refresh(stateRef.current.id, code);
       applyPaper(paper);
       setToolsOpen(false);
-      toast.success(`You're on set ${paper.state.set_number} now. Start from question 1.`);
+      toast.success("You have a new set now. Start from question 1.");
       return true;
     } catch (error) {
       toast.error(error.message);

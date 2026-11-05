@@ -189,7 +189,7 @@ export function SubmitModal({ open, onClose, onConfirm, submitting, examType = "
         ))}
       </div>
       {unanswered > 0 && <p className="mt-4 text-[13px] text-danger-text">{unanswered === 1 ? "One question is" : `${unanswered} questions are`} still unanswered.</p>}
-      {examType === "external" && <p className="mt-3 text-[13px] leading-relaxed text-muted">After you submit, your final code for every question is checked, including code you never ran. Your score is ready in a minute or two.</p>}
+      {examType === "external" && <p className="mt-3 text-[13px] leading-relaxed text-muted">After you submit, your final code for every question is checked, including code you never ran.</p>}
     </Modal>
   );
 }

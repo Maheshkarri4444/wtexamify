@@ -69,9 +69,9 @@ function QuestionPane({ question, index, total, examContext, setContext }) {
 
       {(question.context || setContext || examContext) && (
         <div className="space-y-3">
-          <ContextSection title="Tables and data for this question" text={question.context} />
-          <ContextSection title="Tables and data for your set" text={setContext} />
-          <ContextSection title="Tables and data for every question" text={examContext} />
+          <ContextSection title="Tables and data for this question" text={question.context} definitions={false} />
+          <ContextSection title="Tables and data for your set" text={setContext} definitions={false} />
+          <ContextSection title="Tables and data for every question" text={examContext} definitions={false} />
         </div>
       )}
 

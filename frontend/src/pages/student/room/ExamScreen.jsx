@@ -294,7 +294,6 @@ export function RoomHeader({ info, state, save, stream, offsetRef, onExpire, onS
         <Logo compact />
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-ink">{info.title}</div>
-          <div className="text-xs text-muted">Set {state.set_number}</div>
         </div>
         {stream && <ScreenPreview stream={stream} />}
         <div className="ml-auto flex items-center gap-2 sm:gap-3">

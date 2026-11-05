@@ -160,7 +160,7 @@ function stepsFor(type) {
       lock,
       unlock,
       tools,
-      { title: "Submit when you're done", body: "Press Submit at the top. In the exam, your final code for every question is checked again after you submit, and your score shows in a minute or two.", until: "submitted" },
+      { title: "Submit when you're done", body: "Press Submit at the top. In the exam, your final code for every question is checked again after you submit. Your teacher sees your marks; you don't see a score.", until: "submitted" },
     ];
   }
   return [
@@ -170,7 +170,7 @@ function stepsFor(type) {
     lock,
     unlock,
     tools,
-    { title: "Submit when you're done", body: "Press Submit at the top, or Review and submit on the last question. You'll see your score straight away.", until: "submitted" },
+    { title: "Submit when you're done", body: "Press Submit at the top, or Review and submit on the last question. Your teacher sees your marks; you don't see a score.", until: "submitted" },
   ];
 }
 
@@ -213,24 +213,7 @@ function Coach({ steps, index, onIndex, onClose }) {
   );
 }
 
-function scoreViva(questions, answers) {
-  let score = 0;
-  let max = 0;
-  for (const q of questions) {
-    max += q.marks;
-    const answer = answers[q.id];
-    if (q.type === "fill") {
-      const text = String(answer?.text || "").toLowerCase().replace(/\s+/g, " ").trim();
-      if (q.accepted.includes(text)) score += q.marks;
-    } else {
-      const picked = [...(answer?.selected || [])].sort().join(",");
-      if (picked === [...q.correct].sort().join(",")) score += q.marks;
-    }
-  }
-  return { score, max };
-}
-
-function DemoDone({ demo, result, onAgain }) {
+function DemoDone({ demo, onAgain }) {
   return (
     <div className="flex min-h-screen flex-col bg-canvas">
       <header className="flex h-16 items-center justify-between border-b border-line bg-surface px-4 sm:px-6">
@@ -244,8 +227,8 @@ function DemoDone({ demo, result, onAgain }) {
         <h1 className="mt-5 text-2xl font-semibold tracking-tight text-ink">Demo finished</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted">
           {demo.type === "viva"
-            ? `You scored ${result.score} of ${result.max}. In a real viva your teacher decides whether you see your score and answers.`
-            : "In a real external, your final code is checked again after you submit, and your marks follow the test cases that will execute: 4 of 5 earns 80% of the marks."}
+            ? "In a real viva your answers save as you go, and your teacher sees your marks. You don't see a score after submitting."
+            : "In a real external, your final code is checked again after you submit. Your marks follow the test cases that will execute, and only your teacher sees them."}
         </p>
         <p className="mt-2 text-sm leading-relaxed text-muted">You know your way around the exam room now. Nothing from this demo was saved.</p>
         <div className="mt-7 flex flex-wrap justify-center gap-2">
@@ -376,18 +359,18 @@ function DemoRoom({ demo, onAgain }) {
     setVisited(new Set());
     release();
     setToolsOpen(false);
-    toast.success(`You're on set ${next} now. Start from question 1.`);
+    toast.success("You have a new set now. Start from question 1.");
     reached("refreshed");
     return true;
   };
 
   const submit = () => {
     setSubmitOpen(false);
-    setResult(demo.type === "viva" ? scoreViva(questions, answers) : { done: true });
+    setResult({ done: true });
     reached("submitted");
   };
 
-  if (result) return <DemoDone demo={demo} result={result} onAgain={onAgain} />;
+  if (result) return <DemoDone demo={demo} onAgain={onAgain} />;
 
   const info = {
     title: demo.title,

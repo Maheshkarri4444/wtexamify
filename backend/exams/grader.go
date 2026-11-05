@@ -90,10 +90,10 @@ func gradeWithAI(id primitive.ObjectID) {
 		}
 		language := answerLanguage(q, answer)
 		hash := codeHash(language, answer.Code)
-		if run, ok := att.Runs[qid]; ok && run.CodeHash == hash {
+		if run, ok := att.Runs[qid]; ok && run.CodeHash == hash && !staleMatch(q, language, answer.Code, run) {
 			continue
 		}
-		verdict, err := checkWithAI(ctx, q, language, answer.Code, contextFor(exam, att.SetNumber, q))
+		verdict, err := checkAnswer(ctx, q, language, answer.Code, contextFor(exam, att.SetNumber, q))
 		if err != nil {
 			log.Printf("grader: %s question %s: %v", id.Hex(), qid, err)
 			failed = true

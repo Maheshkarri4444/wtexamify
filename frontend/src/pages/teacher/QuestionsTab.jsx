@@ -278,7 +278,7 @@ export default function QuestionsTab() {
     <div className="space-y-5">
       {locked && (
         <Callout tone="info" icon={Lock}>
-          Questions are read-only because students have started. Duplicate the exam to make a changed copy.
+          Students have started, so questions can't be added, edited or deleted, and every paper stays as it was dealt. Duplicate the exam to make a changed copy.
         </Callout>
       )}
       {examType === "external" && <SharedContextCard exam={exam} setBundle={setBundle} />}
