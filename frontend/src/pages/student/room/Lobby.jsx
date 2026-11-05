@@ -56,7 +56,10 @@ export default function Lobby({ info, attempt, sharing, onShare, onStart, starti
     lockable && info.max_violations > 0 && `On the ${ordinal} lock, your exam is submitted automatically.`,
     req.block_clipboard && "Copy, paste and right-click are turned off.",
     type === "internal" ? "When the timer runs out, the paper closes on its own." : "Answers save automatically. If the timer runs out, what you've answered is submitted.",
-    req.screen_share && "Your entire screen is shared while you write. Don't click the browser's sharing bar.",
+    req.screen_share &&
+      (req.fullscreen && req.lock_on_leave
+        ? "Your entire screen is shared while you write. If Chrome's sharing bar is in the way, drag it aside or click Hide, then click back into the exam within 10 seconds."
+        : "Your entire screen is shared while you write. Don't click the browser's sharing bar."),
   ].filter(Boolean);
   const startLabel = resuming ? (type === "internal" ? "Reopen the paper" : "Resume exam") : type === "internal" ? "Open the question paper" : req.fullscreen ? "Enter fullscreen and start" : "Start exam";
 

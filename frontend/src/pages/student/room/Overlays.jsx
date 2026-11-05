@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, KeyRound, Maximize, MonitorUp, RefreshCw, Send, ShieldAlert, Unlock } from "lucide-react";
+import { AlertTriangle, KeyRound, Maximize, MonitorUp, MousePointerClick, RefreshCw, Send, ShieldAlert, Unlock } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
 import { Modal } from "../../../components/ui/Overlay";
@@ -95,6 +95,26 @@ export function LockOverlay({ state, onUnlock, onRefresh, demoCodes }) {
       </button>
       {mode === "refresh" && <p className="mt-2 text-xs text-muted">A new set clears every answer on this paper.</p>}
     </OverlayShell>
+  );
+}
+
+/**
+ * Shown after the student clicks something over the exam, such as Chrome's
+ * sharing bar, until they click back in. It doesn't catch clicks, so a click
+ * anywhere on the page, the banner included, brings them back.
+ */
+export function AwayBanner({ until }) {
+  const now = useNow(250);
+  const seconds = Math.max(0, Math.ceil((until - now) / 1000));
+  return (
+    <div role="alert" className="pointer-events-none fixed inset-x-0 top-24 z-40 flex justify-center px-4">
+      <div className="flex items-center gap-2.5 rounded-full border border-warning/40 bg-warning-soft px-4 py-2 text-sm font-medium text-warning-text shadow-pop">
+        <MousePointerClick className="h-4 w-4 shrink-0" />
+        <span>
+          Click back into the exam within <span className="tabular-nums">{seconds}</span> s, or it locks.
+        </span>
+      </div>
+    </div>
   );
 }
 

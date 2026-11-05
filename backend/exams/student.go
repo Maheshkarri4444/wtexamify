@@ -481,7 +481,8 @@ func syncAttempt(c *gin.Context) {
 
 // attemptEvent records what the browser noticed. Leaving the exam locks it
 // (one violation per lock, however many events one slip triggers); blocked
-// copy/paste is only counted.
+// copy/paste is only counted, and a click over the exam that came back in time
+// is only noted.
 func attemptEvent(c *gin.Context) {
 	var req struct {
 		Type   string `json:"type"`
@@ -518,6 +519,16 @@ func attemptEvent(c *gin.Context) {
 			return
 		}
 		att.ClipboardBlocks++
+		respondState(ctx, c, att)
+		return
+	}
+	if req.Type == "away" {
+		// Clicked something over the fullscreen exam, such as Chrome's sharing
+		// bar, and came back in time: noted for the teacher, never a violation.
+		if _, err := attemptsCol().UpdateOne(ctx, bson.M{"_id": att.ID}, bson.M{"$push": bson.M{"events": eventPush(event)}}); err != nil {
+			respondErr(c, err)
+			return
+		}
 		respondState(ctx, c, att)
 		return
 	}

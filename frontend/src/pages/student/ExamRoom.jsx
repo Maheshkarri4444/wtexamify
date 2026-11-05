@@ -11,7 +11,7 @@ import { enterFullscreen, exitFullscreen, isFullscreen, isStreamLive, shareEntir
 import { checkIsCurrent } from "./room/codeAnswers";
 import ExamScreen from "./room/ExamScreen";
 import Lobby from "./room/Lobby";
-import { LockOverlay, ResumeGate, SubmitModal, TeacherToolsModal } from "./room/Overlays";
+import { AwayBanner, LockOverlay, ResumeGate, SubmitModal, TeacherToolsModal } from "./room/Overlays";
 import PaperScreen from "./room/PaperScreen";
 import ResultScreen from "./room/ResultScreen";
 import { useProctoring } from "./room/useProctoring";
@@ -78,6 +78,7 @@ export default function ExamRoom() {
   const [submitOpen, setSubmitOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [awayUntil, setAwayUntil] = useState(null); // clicked onto Chrome's sharing bar: locks at this time unless they click back in
 
   // Refs hold the latest values for timers and browser event handlers.
   const stateRef = useRef(null);
@@ -275,6 +276,14 @@ export default function ExamRoom() {
     }
   }, []);
 
+  // A click on Chrome's sharing bar (or anything else over the fullscreen exam)
+  // that came back in time is noted on the teacher's timeline, never a violation.
+  const away = useCallback((until, ms) => {
+    setAwayUntil(until);
+    const s = stateRef.current;
+    if (ms >= 1000 && s?.status === "in_progress") studentApi.event(s.id, "away", `Back in ${Math.round(ms / 1000)} s, not locked`).catch(() => {});
+  }, []);
+
   const attachStream = useCallback((next) => {
     stopStream(streamRef.current);
     streamRef.current = next;
@@ -391,6 +400,8 @@ export default function ExamRoom() {
     blockClipboard: Boolean(req.block_clipboard),
     onViolation: report,
     onBlocked: blocked,
+    // Only a shared screen has Chrome's sharing bar floating over the exam.
+    onAway: req.screen_share ? away : undefined,
   });
 
   const start = async () => {
@@ -528,6 +539,7 @@ export default function ExamRoom() {
           onFullscreen={() => enterFullscreen().catch(() => toast.error("Fullscreen was blocked. Try again."))}
         />
       ) : null}
+      {awayUntil && !concealed && <AwayBanner until={awayUntil} />}
       <SubmitModal
         open={submitOpen}
         onClose={() => setSubmitOpen(false)}
