@@ -100,7 +100,8 @@ export function CodeCard({ question, ...props }) {
 }
 
 /** Tables, sample rows or notes that every code question can refer to. */
-export function SharedContextCard({ exam, setBundle }) {
+export function SharedContextCard({ exam, setBundle, owner = true }) {
+  const locked = exam.content_locked || !owner;
   const [value, setValue] = useState(exam.context || "");
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(Boolean(exam.context));
@@ -137,21 +138,21 @@ export function SharedContextCard({ exam, setBundle }) {
             rows={9}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            disabled={exam.content_locked}
+            disabled={locked}
             placeholder={"CREATE TABLE employees (id INT PRIMARY KEY, name VARCHAR(50), dept VARCHAR(20), salary INT);\nINSERT INTO employees VALUES (1, 'Ravi', 'CSE', 52000), (2, 'Sita', 'ECE', 48000);"}
             className="font-mono text-[12.5px]"
           />
           <div className="flex items-center justify-between gap-3">
             <span className="flex items-center gap-1.5 text-xs text-muted">
-              {exam.content_locked ? (
+              {locked ? (
                 <>
-                  <Lock className="h-3 w-3" /> Locked because students have started.
+                  <Lock className="h-3 w-3" /> {owner ? "Locked because students have started." : "Only the teacher who created this exam can change it."}
                 </>
               ) : (
                 `${value.length.toLocaleString("en-IN")} / 20,000 characters`
               )}
             </span>
-            <Button size="sm" icon={Save} onClick={save} loading={saving} disabled={!dirty || exam.content_locked}>
+            <Button size="sm" icon={Save} onClick={save} loading={saving} disabled={!dirty || locked}>
               Save schema
             </Button>
           </div>

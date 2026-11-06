@@ -71,6 +71,8 @@ export const teacherApi = {
   update: (id, body) => patch(exam(id), body),
   remove: (id) => del(exam(id)),
   duplicate: (id) => post(`${exam(id)}/duplicate`),
+  teachers: () => get("/api/v2/teacher/teachers"),
+  share: (id, emails) => put(`${exam(id)}/share`, { emails }),
   setStatus: (id, status) => post(`${exam(id)}/status`, { status }),
   regenerateCodes: (id, which) => post(`${exam(id)}/codes/regenerate`, { which }),
   // extra: { custom_sets, set_contexts } from a sheet with the teacher's own sets.

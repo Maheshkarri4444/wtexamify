@@ -46,7 +46,8 @@ type monitorRow struct {
 	Grading         string      `json:"grading"`
 }
 
-func studentNames(ctx context.Context, emails []string) map[string]string {
+// userNames maps the emails of signed-up users (students or teachers) to their names.
+func userNames(ctx context.Context, emails []string) map[string]string {
 	names := map[string]string{}
 	if len(emails) == 0 {
 		return names
@@ -107,7 +108,7 @@ func rowFor(email, name string, set int, allowed bool, att *Attempt, now time.Ti
 func monitor(c *gin.Context) {
 	ctx, cancel := dbCtx()
 	defer cancel()
-	exam, err := loadOwnedExam(ctx, c)
+	exam, err := loadExam(ctx, c)
 	if err != nil {
 		respondErr(c, err)
 		return
@@ -121,7 +122,7 @@ func monitor(c *gin.Context) {
 	for _, att := range attempts {
 		byEmail[att.StudentEmail] = att
 	}
-	names := studentNames(ctx, exam.AllowedStudents)
+	names := userNames(ctx, exam.AllowedStudents)
 	sets := map[string]int{}
 	for _, a := range exam.Assignments {
 		sets[a.Email] = a.Set
@@ -190,7 +191,7 @@ type questionStats struct {
 func results(c *gin.Context) {
 	ctx, cancel := dbCtx()
 	defer cancel()
-	exam, err := loadOwnedExam(ctx, c)
+	exam, err := loadExam(ctx, c)
 	if err != nil {
 		respondErr(c, err)
 		return
@@ -405,7 +406,7 @@ func sheetItems(exam *Exam, att *Attempt) []reviewQuestion {
 func attemptDetail(c *gin.Context) {
 	ctx, cancel := dbCtx()
 	defer cancel()
-	exam, err := loadOwnedExam(ctx, c)
+	exam, err := loadExam(ctx, c)
 	if err != nil {
 		respondErr(c, err)
 		return
@@ -437,7 +438,7 @@ func setMarks(c *gin.Context) {
 	}
 	ctx, cancel := dbCtx()
 	defer cancel()
-	exam, err := loadOwnedExam(ctx, c)
+	exam, err := loadExam(ctx, c)
 	if err != nil {
 		respondErr(c, err)
 		return
@@ -485,7 +486,7 @@ func setMarks(c *gin.Context) {
 func answerSheets(c *gin.Context) {
 	ctx, cancel := dbCtx()
 	defer cancel()
-	exam, err := loadOwnedExam(ctx, c)
+	exam, err := loadExam(ctx, c)
 	if err != nil {
 		respondErr(c, err)
 		return
@@ -523,7 +524,7 @@ func attemptAction(c *gin.Context) {
 	}
 	ctx, cancel := dbCtx()
 	defer cancel()
-	exam, err := loadOwnedExam(ctx, c)
+	exam, err := loadExam(ctx, c)
 	if err != nil {
 		respondErr(c, err)
 		return
@@ -613,7 +614,7 @@ func extendAll(c *gin.Context) {
 	}
 	ctx, cancel := dbCtx()
 	defer cancel()
-	exam, err := loadOwnedExam(ctx, c)
+	exam, err := loadExam(ctx, c)
 	if err != nil {
 		respondErr(c, err)
 		return

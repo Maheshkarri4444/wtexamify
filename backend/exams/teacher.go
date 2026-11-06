@@ -95,6 +95,9 @@ func ensureSlices(e *Exam) {
 	if e.AllowedStudents == nil {
 		e.AllowedStudents = []string{}
 	}
+	if e.SharedWith == nil {
+		e.SharedWith = []string{}
+	}
 	if e.Assignments == nil {
 		e.Assignments = []Assignment{}
 	}
@@ -125,6 +128,7 @@ func respondBundle(ctx context.Context, c *gin.Context, e *Exam, extra gin.H) {
 		"exam":      e,
 		"stats":     attemptStats{Started: started, InProgress: started - submitted, Submitted: submitted},
 		"readiness": readiness(e),
+		"access":    accessFor(ctx, c, e),
 	}
 	for key, value := range extra {
 		body[key] = value
@@ -143,6 +147,11 @@ type examSummary struct {
 	SetCount        int                `bson:"set_count" json:"set_count"`
 	StudentCount    int                `bson:"student_count" json:"student_count"`
 	ContentLocked   bool               `bson:"content_locked" json:"content_locked"`
+	OwnerID         primitive.ObjectID `bson:"owner_id" json:"-"`
+	OwnerEmail      string             `bson:"owner_email" json:"owner_email"`
+	OwnerName       string             `bson:"-" json:"owner_name"`
+	Shared          bool               `bson:"-" json:"shared"` // shared with this teacher by its owner
+	SharedCount     int                `bson:"shared_count" json:"shared_count"`
 	CreatedAt       time.Time          `bson:"created_at" json:"created_at"`
 	UpdatedAt       time.Time          `bson:"updated_at" json:"updated_at"`
 	LiveAt          *time.Time         `bson:"live_at" json:"live_at"`
@@ -157,16 +166,18 @@ func sizeOf(field string) bson.M {
 func listExams(c *gin.Context) {
 	ctx, cancel := dbCtx()
 	defer cancel()
+	user := userFrom(c)
 	cursor, err := examsCol().Aggregate(ctx, mongo.Pipeline{
-		{{Key: "$match", Value: bson.M{"owner_id": userFrom(c).ID}}},
+		{{Key: "$match", Value: teacherExams(user)}},
 		{{Key: "$sort", Value: bson.D{{Key: "updated_at", Value: -1}}}},
 		{{Key: "$project", Value: bson.M{
 			"title": 1, "type": 1, "status": 1, "duration_minutes": 1, "content_locked": 1,
-			"created_at": 1, "updated_at": 1, "live_at": 1,
+			"created_at": 1, "updated_at": 1, "live_at": 1, "owner_id": 1, "owner_email": 1,
 			"per_set":        "$blueprint.per_set",
 			"question_count": sizeOf("questions"),
 			"set_count":      sizeOf("sets"),
 			"student_count":  sizeOf("allowed_students"),
+			"shared_count":   sizeOf("shared_with"),
 		}}},
 	})
 	if err != nil {
@@ -180,8 +191,19 @@ func listExams(c *gin.Context) {
 	}
 
 	ids := make([]primitive.ObjectID, len(summaries))
+	owners := []string{}
 	for i, s := range summaries {
 		ids[i] = s.ID
+		if s.OwnerID != user.ID {
+			summaries[i].Shared = true
+			owners = append(owners, s.OwnerEmail)
+		}
+	}
+	ownerNames := userNames(ctx, owners)
+	for i := range summaries {
+		if summaries[i].Shared {
+			summaries[i].OwnerName = ownerNames[summaries[i].OwnerEmail]
+		}
 	}
 	counts, err := attemptsCol().Aggregate(ctx, mongo.Pipeline{
 		{{Key: "$match", Value: bson.M{"exam_id": bson.M{"$in": ids}}}},
@@ -273,7 +295,7 @@ func createExam(c *gin.Context) {
 func getExam(c *gin.Context) {
 	ctx, cancel := dbCtx()
 	defer cancel()
-	exam, err := loadOwnedExam(ctx, c)
+	exam, err := loadExam(ctx, c)
 	if err != nil {
 		respondErr(c, err)
 		return
@@ -339,6 +361,9 @@ func patchExam(c *gin.Context) {
 			sharedContext := strings.TrimRight(*req.Context, " \t\n")
 			if runeLen(sharedContext) > maxContext {
 				return nil, newError(http.StatusBadRequest, "The shared context can be at most %d characters.", maxContext)
+			}
+			if sharedContext != e.Context && !ownsExam(c, e) {
+				return nil, ownerOnly("change its tables")
 			}
 			if e.ContentLocked && sharedContext != e.Context {
 				return nil, errLocked
@@ -423,7 +448,7 @@ func patchExam(c *gin.Context) {
 func deleteExam(c *gin.Context) {
 	ctx, cancel := dbCtx()
 	defer cancel()
-	exam, err := loadOwnedExam(ctx, c)
+	exam, err := loadOwnExam(ctx, c, "delete it")
 	if err != nil {
 		respondErr(c, err)
 		return
@@ -444,14 +469,17 @@ func deleteExam(c *gin.Context) {
 func duplicateExam(c *gin.Context) {
 	ctx, cancel := dbCtx()
 	defer cancel()
-	source, err := loadOwnedExam(ctx, c)
+	source, err := loadExam(ctx, c)
 	if err != nil {
 		respondErr(c, err)
 		return
 	}
 	now := time.Now()
+	user := userFrom(c)
 	copied := *source
 	copied.ID = primitive.NewObjectID()
+	copied.OwnerID, copied.OwnerEmail = user.ID, user.Email
+	copied.SharedWith = []string{}
 	copied.Title = truncateRunes("Copy of "+source.Title, 120)
 	copied.Status = StatusDraft
 	copied.AllowedStudents = []string{}
@@ -492,7 +520,7 @@ func addQuestions(c *gin.Context) {
 	ctx, cancel := dbCtx()
 	defer cancel()
 	var cleaned []Question
-	exam, err := modifyExam(ctx, c, func(e *Exam) (bson.M, error) {
+	exam, err := modifyOwnExam(ctx, c, "change its questions", func(e *Exam) (bson.M, error) {
 		if e.ContentLocked {
 			return nil, errLocked
 		}
@@ -574,7 +602,7 @@ func updateQuestion(c *gin.Context) {
 
 	ctx, cancel := dbCtx()
 	defer cancel()
-	exam, err := modifyExam(ctx, c, func(e *Exam) (bson.M, error) {
+	exam, err := modifyOwnExam(ctx, c, "change its questions", func(e *Exam) (bson.M, error) {
 		if e.ContentLocked {
 			return nil, errLocked
 		}
@@ -618,7 +646,7 @@ func deleteQuestions(c *gin.Context) {
 	ctx, cancel := dbCtx()
 	defer cancel()
 	deleted := 0
-	exam, err := modifyExam(ctx, c, func(e *Exam) (bson.M, error) {
+	exam, err := modifyOwnExam(ctx, c, "change its questions", func(e *Exam) (bson.M, error) {
 		if e.ContentLocked {
 			return nil, errLocked
 		}
@@ -650,7 +678,7 @@ func previewBlueprint(c *gin.Context) {
 	bp.PerSet = min(bp.PerSet, 200)
 	ctx, cancel := dbCtx()
 	defer cancel()
-	exam, err := loadOwnedExam(ctx, c)
+	exam, err := loadExam(ctx, c)
 	if err != nil {
 		respondErr(c, err)
 		return
@@ -686,7 +714,7 @@ func saveBlueprint(c *gin.Context) {
 		if bp.Custom && !allHaveSets(e.Questions) {
 			return nil, newError(http.StatusBadRequest, "Some questions have no set number. Give every question a set before using your own sets.")
 		}
-		if bp.SetContexts == nil {
+		if bp.SetContexts == nil || !ownsExam(c, e) {
 			bp.SetContexts = e.Blueprint.SetContexts // switching back and forth keeps each set's schema
 		}
 		if bp.PerSet < 1 {

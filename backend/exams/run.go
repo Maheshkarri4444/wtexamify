@@ -223,7 +223,7 @@ func checkQuestion(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
-	exam, err := loadOwnedExam(ctx, c)
+	exam, err := loadExam(ctx, c)
 	if err != nil {
 		respondErr(c, err)
 		return

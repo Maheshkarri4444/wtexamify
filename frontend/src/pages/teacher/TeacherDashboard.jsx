@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { CheckCheck, Clock3, FileQuestion, Layers3, Plus, Radio, Search, Users } from "lucide-react";
+import { CheckCheck, Clock3, FileQuestion, Layers3, Plus, Radio, Search, Share2, Users } from "lucide-react";
 import { AppShell } from "../../components/layout/AppShell";
 import { StatusBadge, TypeIcon } from "../../components/exam/ExamBits";
+import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { PageHeader } from "../../components/ui/Card";
 import { StatTile, Meter } from "../../components/ui/Data";
@@ -11,7 +12,7 @@ import { Input, Segmented } from "../../components/ui/Form";
 import { teacherApi } from "../../lib/api";
 import { getUser } from "../../lib/auth";
 import { EXAM_TYPES } from "../../lib/examTypes";
-import { firstName, formatMinutes, timeAgo } from "../../lib/format";
+import { firstName, formatMinutes, pluralize, timeAgo } from "../../lib/format";
 import { usePolling } from "../../lib/hooks";
 import CreateExamModal from "./CreateExamModal";
 
@@ -38,6 +39,17 @@ function ExamCard({ exam }) {
             <p className="text-xs text-muted">
               {EXAM_TYPES[exam.type]?.label} · edited {timeAgo(exam.updated_at)}
             </p>
+            {exam.shared ? (
+              <Badge tone="info" icon={Share2} className="mt-1.5 max-w-full" title={exam.owner_email}>
+                <span className="truncate">Shared by {exam.owner_name || exam.owner_email}</span>
+              </Badge>
+            ) : (
+              exam.shared_count > 0 && (
+                <Badge icon={Share2} className="mt-1.5">
+                  Shared with {pluralize(exam.shared_count, "teacher")}
+                </Badge>
+              )
+            )}
           </div>
         </div>
         <StatusBadge status={exam.status} />
@@ -128,7 +140,7 @@ const TeacherDashboard = () => {
       />
 
       <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Exams" info="Every exam you've made. Drafts are visible only to you; published exams show up for their students as upcoming." value={exams ? counts.all : "—"} icon={Layers3} tone="primary" hint={`${counts.draft} draft · ${counts.ended} ended`} />
+        <StatTile label="Exams" info="Every exam you've made, and the ones other teachers shared with you. Drafts are visible only to teachers; published exams show up for their students as upcoming." value={exams ? counts.all : "—"} icon={Layers3} tone="primary" hint={`${counts.draft} draft · ${counts.ended} ended`} />
         <StatTile label="Live now" info="Exams running right now. Students on their lists can start them." value={exams ? counts.live : "—"} icon={Radio} tone="success" hint={counts.live ? "Students are writing" : "Nothing running"} />
         <StatTile label="Students added" info="Students across all your exam lists. Someone on two lists is counted twice." value={exams ? counts.students.toLocaleString("en-IN") : "—"} icon={Users} tone="info" hint="Across all exams" />
         <StatTile label="Submissions" info="Answer sheets handed in across all your exams, including ones submitted automatically when time ran out." value={exams ? counts.submitted.toLocaleString("en-IN") : "—"} icon={CheckCheck} tone="neutral" hint="Marked automatically" />

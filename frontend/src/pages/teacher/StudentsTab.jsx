@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import toast from "react-hot-toast";
-import { CheckCircle2, CircleDashed, FileSpreadsheet, PencilLine, Search, Trash2, UserPlus, Users, X } from "lucide-react";
+import { CheckCircle2, CircleDashed, FileSpreadsheet, Layers3, PencilLine, Search, Trash2, UserPlus, Users, X } from "lucide-react";
 import { Badge } from "../../components/ui/Badge";
 import { Button, IconButton } from "../../components/ui/Button";
 import { Card, CardHeader } from "../../components/ui/Card";
@@ -29,6 +29,7 @@ export default function StudentsTab() {
   const [pendingFile, setPendingFile] = useState(null); // { name, valid, invalid }
   const [removing, setRemoving] = useState(null); // emails, or "all"
   const [statuses, setStatuses] = useState({});
+  const [grouped, setGrouped] = useState(false); // list the students under their set numbers
   const fileRef = useRef(null);
 
   usePolling(() => {
@@ -105,6 +106,40 @@ export default function StudentsTab() {
     for (const a of exam.assignments) counts.set(a.set, (counts.get(a.set) || 0) + 1);
     return [...counts.entries()].sort((a, b) => a[0] - b[0]);
   }, [exam.assignments]);
+
+  // The shown students by set, in set order; anyone not dealt a set yet comes last.
+  const groups = useMemo(() => {
+    const bySet = new Map();
+    for (const email of visible) {
+      const set = sets.get(email) || 0;
+      if (!bySet.has(set)) bySet.set(set, []);
+      bySet.get(set).push(email);
+    }
+    return [...bySet.entries()].sort(([a], [b]) => (a || Infinity) - (b || Infinity));
+  }, [visible, sets]);
+
+  const studentRow = (email) => {
+    const status = STATUS[statuses[email] || "not_started"];
+    const started = statuses[email] && statuses[email] !== "not_started";
+    return (
+      <tr key={email} className="transition hover:bg-subtle/50">
+        <td className="py-2.5 pl-5">
+          <Checkbox checked={selected.has(email)} onChange={(on) => toggle(email, on)} label={`Select ${email}`} disabled={started} />
+        </td>
+        <td className="px-3 py-2.5 font-medium tabular-nums text-ink">{rollFromEmail(email)}</td>
+        <td className="px-3 py-2.5 text-muted">{email}</td>
+        <td className="px-3 py-2.5 tabular-nums text-ink-2">{sets.get(email) || "—"}</td>
+        <td className="px-3 py-2.5">
+          <Badge tone={status.tone} icon={status.icon}>
+            {status.label}
+          </Badge>
+        </td>
+        <td className="py-2.5 pr-5 text-right">
+          <IconButton icon={X} label={started ? "Already started" : `Remove ${email}`} size="sm" disabled={started} onClick={() => setRemoving([email])} />
+        </td>
+      </tr>
+    );
+  };
 
   return (
     <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
@@ -188,6 +223,11 @@ export default function StudentsTab() {
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
                 <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by email" className="h-9 pl-9" />
               </div>
+              {setCounts.length > 0 && (
+                <Button size="sm" variant={grouped ? "primary" : "secondary"} icon={Layers3} aria-pressed={grouped} onClick={() => setGrouped((on) => !on)}>
+                  Group by set
+                </Button>
+              )}
               {selected.size > 0 && (
                 <Button size="sm" variant="danger-soft" icon={Trash2} onClick={() => setRemoving([...selected])}>
                   Remove {selected.size}
@@ -213,28 +253,19 @@ export default function StudentsTab() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {visible.map((email) => {
-                    const status = STATUS[statuses[email] || "not_started"];
-                    const started = statuses[email] && statuses[email] !== "not_started";
-                    return (
-                      <tr key={email} className="transition hover:bg-subtle/50">
-                        <td className="py-2.5 pl-5">
-                          <Checkbox checked={selected.has(email)} onChange={(on) => toggle(email, on)} label={`Select ${email}`} disabled={started} />
-                        </td>
-                        <td className="px-3 py-2.5 font-medium tabular-nums text-ink">{rollFromEmail(email)}</td>
-                        <td className="px-3 py-2.5 text-muted">{email}</td>
-                        <td className="px-3 py-2.5 tabular-nums text-ink-2">{sets.get(email) || "—"}</td>
-                        <td className="px-3 py-2.5">
-                          <Badge tone={status.tone} icon={status.icon}>
-                            {status.label}
-                          </Badge>
-                        </td>
-                        <td className="py-2.5 pr-5 text-right">
-                          <IconButton icon={X} label={started ? "Already started" : `Remove ${email}`} size="sm" disabled={started} onClick={() => setRemoving([email])} />
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {grouped && setCounts.length > 0
+                    ? groups.map(([set, emails]) => (
+                        <Fragment key={set}>
+                          <tr className="bg-subtle/70">
+                            <th colSpan={6} scope="rowgroup" className="px-5 py-2 text-left text-[13px] font-semibold text-ink">
+                              {set ? `Set ${set}` : "No set yet"}
+                              <span className="ml-2 font-normal text-muted">{pluralize(emails.length, "student")}</span>
+                            </th>
+                          </tr>
+                          {emails.map(studentRow)}
+                        </Fragment>
+                      ))
+                    : visible.map(studentRow)}
                 </tbody>
               </table>
             </div>

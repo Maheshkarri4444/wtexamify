@@ -17,12 +17,14 @@ import {
   RotateCcw,
   Send,
   Settings2,
+  Share2,
   Square,
   Trash2,
   Users,
 } from "lucide-react";
 import { AppShell } from "../../components/layout/AppShell";
 import { StatusBadge, TypeIcon } from "../../components/exam/ExamBits";
+import { Badge } from "../../components/ui/Badge";
 import { Button, IconButton } from "../../components/ui/Button";
 import { Callout, PageLoader } from "../../components/ui/Feedback";
 import { ConfirmModal, InfoTip, Menu } from "../../components/ui/Overlay";
@@ -30,6 +32,7 @@ import { cn } from "../../lib/cn";
 import { teacherApi } from "../../lib/api";
 import { formatMinutes, pluralize } from "../../lib/format";
 import { usePolling } from "../../lib/hooks";
+import ShareExamModal from "./ShareExamModal";
 
 const TABS = [
   { to: "", label: "Overview", icon: LayoutDashboard, end: true },
@@ -64,6 +67,7 @@ const ExamWorkspace = () => {
   const [missing, setMissing] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -116,7 +120,7 @@ const ExamWorkspace = () => {
   const duplicate = async () => {
     try {
       const { id: copyId } = await teacherApi.duplicate(id);
-      toast.success("Copied into a new draft, without students.");
+      toast.success("Copied into a new draft of your own, without students.");
       navigate(`/teacher/exams/${copyId}`);
     } catch (error) {
       toast.error(error.message);
@@ -153,6 +157,9 @@ const ExamWorkspace = () => {
   }
 
   const { exam, stats } = bundle;
+  // Teachers it's shared with do everything here except change questions, share it or delete it.
+  const owner = bundle.access?.owner !== false;
+  const ownerName = bundle.access?.owner_name || exam.owner_email;
   const actions = {
     draft: (
       <>
@@ -210,7 +217,12 @@ const ExamWorkspace = () => {
             <div className="flex flex-wrap items-center gap-2.5">
               <h1 className="truncate text-2xl font-semibold tracking-tight text-ink">{exam.title}</h1>
               <StatusBadge status={exam.status} />
-              <InfoTip text="Draft: only you can see it. Published: students see it as upcoming. Live: students on the list can start. Ended: everyone still writing was submitted." />
+              <InfoTip text="Draft: only you and the teachers it's shared with can see it. Published: students see it as upcoming. Live: students on the list can start. Ended: everyone still writing was submitted." />
+              {!owner && (
+                <Badge tone="info" icon={Share2} title={exam.owner_email}>
+                  Shared by {ownerName}
+                </Badge>
+              )}
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted">
               <span className="flex items-center gap-1.5">
@@ -221,17 +233,27 @@ const ExamWorkspace = () => {
               <span>{exam.blueprint.custom ? `${pluralize(exam.sets.length, "set")} of your own` : `${pluralize(exam.sets.length, "set")} of ${exam.blueprint.per_set}`}</span>
               <span>{pluralize(exam.allowed_students.length, "student")}</span>
               {stats.started > 0 && <span>{stats.submitted} / {stats.started} submitted</span>}
+              {owner && exam.shared_with.length > 0 && (
+                <button type="button" onClick={() => setSharing(true)} className="flex items-center gap-1.5 hover:text-ink">
+                  <Share2 className="h-3.5 w-3.5" />
+                  Shared with {pluralize(exam.shared_with.length, "teacher")}
+                </button>
+              )}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {owner && (
+            <Button variant="ghost" icon={Share2} onClick={() => setSharing(true)}>
+              Share
+            </Button>
+          )}
           {actions}
           <Menu
             trigger={({ toggle }) => <IconButton icon={MoreHorizontal} label="More actions" variant="secondary" onClick={toggle} />}
             items={[
               { label: "Duplicate", icon: Copy, onSelect: duplicate, hint: "for another batch" },
-              "divider",
-              { label: "Delete exam", icon: Trash2, danger: true, onSelect: () => setConfirm("delete") },
+              ...(owner ? ["divider", { label: "Delete exam", icon: Trash2, danger: true, onSelect: () => setConfirm("delete") }] : []),
             ]}
           />
         </div>
@@ -296,6 +318,7 @@ const ExamWorkspace = () => {
         confirmLabel="Delete forever"
         confirmText={stats.started > 0 ? "delete" : undefined}
       />
+      {owner && <ShareExamModal open={sharing} onClose={() => setSharing(false)} exam={exam} onSaved={setBundle} />}
     </AppShell>
   );
 };

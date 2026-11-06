@@ -282,6 +282,7 @@ func fakeGemini(t *testing.T, reply func(key, model string) (int, string)) *[]st
 		pauses.Delete(k)
 		return true
 	})
+	keyTurn.Store(0) // each test's first check starts from the first key
 	return &asked
 }
 

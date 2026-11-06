@@ -156,12 +156,15 @@ type Settings struct {
 }
 
 type Exam struct {
-	ID           primitive.ObjectID `bson:"_id" json:"id"`
-	OwnerID      primitive.ObjectID `bson:"owner_id" json:"owner_id"`
-	OwnerEmail   string             `bson:"owner_email" json:"owner_email"`
-	Type         string             `bson:"type" json:"type"`
-	Title        string             `bson:"title" json:"title"`
-	Instructions string             `bson:"instructions" json:"instructions"`
+	ID         primitive.ObjectID `bson:"_id" json:"id"`
+	OwnerID    primitive.ObjectID `bson:"owner_id" json:"owner_id"`
+	OwnerEmail string             `bson:"owner_email" json:"owner_email"`
+	// SharedWith are the other teachers (lowercase emails) who see this exam on
+	// their dashboard and can run it like the owner, except change its questions.
+	SharedWith   []string `bson:"shared_with,omitempty" json:"shared_with"`
+	Type         string   `bson:"type" json:"type"`
+	Title        string   `bson:"title" json:"title"`
+	Instructions string   `bson:"instructions" json:"instructions"`
 	// Context is shared reference material for code questions, such as table
 	// definitions and sample rows. Students see it, and the AI checks against it.
 	Context         string        `bson:"context,omitempty" json:"context"`

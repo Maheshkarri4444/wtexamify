@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import toast from "react-hot-toast";
-import { Check, Download, FileQuestion, FileSpreadsheet, Lock, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Check, Download, FileQuestion, FileSpreadsheet, Lock, Pencil, Plus, Search, Share2, Trash2 } from "lucide-react";
 import { DifficultyBadge, QuestionText, QuestionTypeBadge } from "../../components/exam/ExamBits";
 import { Badge } from "../../components/ui/Badge";
 import { Button, IconButton } from "../../components/ui/Button";
@@ -119,7 +119,10 @@ export default function QuestionsTab() {
   const { bundle, setBundle, reload } = useOutletContext();
   const { exam } = bundle;
   const examType = exam.type;
-  const locked = exam.content_locked;
+  // Only the teacher who made the exam changes its questions; teachers it's shared with see them read-only.
+  const owner = bundle.access?.owner !== false;
+  const ownerName = bundle.access?.owner_name || exam.owner_email;
+  const locked = exam.content_locked || !owner;
   const custom = Boolean(exam.blueprint?.custom);
   const [query, setQuery] = useState("");
   const [setFilter, setSetFilter] = useState("");
@@ -255,10 +258,17 @@ export default function QuestionsTab() {
     </Suspense>
   );
 
+  const sharedNote = !owner && (
+    <Callout tone="info" icon={Share2}>
+      {ownerName} shared this exam with you. You can see every question and answer, but only {ownerName} can add, edit or delete them.
+    </Callout>
+  );
+
   if (!exam.questions.length) {
     return (
       <div className="space-y-5">
-        {examType === "external" && <SharedContextCard exam={exam} setBundle={setBundle} />}
+        {sharedNote}
+        {examType === "external" && <SharedContextCard exam={exam} setBundle={setBundle} owner={owner} />}
         <EmptyState icon={FileQuestion} title="Build your question bank" description={EMPTY_TEXT[examType]}>
           <Button icon={Plus} onClick={() => setEditor({})} disabled={locked}>
             Add question
@@ -276,12 +286,13 @@ export default function QuestionsTab() {
 
   return (
     <div className="space-y-5">
-      {locked && (
-        <Callout tone="info" icon={Lock}>
-          Students have started, so questions can't be added, edited or deleted, and every paper stays as it was dealt. Duplicate the exam to make a changed copy.
-        </Callout>
-      )}
-      {examType === "external" && <SharedContextCard exam={exam} setBundle={setBundle} />}
+      {sharedNote ||
+        (exam.content_locked && (
+          <Callout tone="info" icon={Lock}>
+            Students have started, so questions can't be added, edited or deleted, and every paper stays as it was dealt. Duplicate the exam to make a changed copy.
+          </Callout>
+        ))}
+      {examType === "external" && <SharedContextCard exam={exam} setBundle={setBundle} owner={owner} />}
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[14rem] flex-1">

@@ -20,12 +20,14 @@ func RegisterRoutes(r *gin.Engine) {
 
 	teacher := api.Group("/teacher", middleware.TeacherMiddleware())
 	{
+		teacher.GET("/teachers", listTeachers)
 		teacher.GET("/exams", listExams)
 		teacher.POST("/exams", createExam)
 		teacher.GET("/exams/:id", getExam)
 		teacher.PATCH("/exams/:id", patchExam)
 		teacher.DELETE("/exams/:id", deleteExam)
 		teacher.POST("/exams/:id/duplicate", duplicateExam)
+		teacher.PUT("/exams/:id/share", shareExam)
 		teacher.POST("/exams/:id/status", setStatus)
 		teacher.POST("/exams/:id/codes/regenerate", regenerateCodes)
 

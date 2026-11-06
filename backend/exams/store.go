@@ -34,6 +34,7 @@ func ensureIndexes() {
 	defer cancel()
 	if _, err := examsCol().Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{Keys: bson.D{{Key: "owner_id", Value: 1}, {Key: "updated_at", Value: -1}}},
+		{Keys: bson.D{{Key: "shared_with", Value: 1}}},
 		{Keys: bson.D{{Key: "allowed_students", Value: 1}}},
 	}); err != nil {
 		log.Println("v2 exam indexes:", err)
@@ -115,27 +116,69 @@ func idParam(c *gin.Context, name string) (primitive.ObjectID, error) {
 	return id, nil
 }
 
-func loadOwnedExam(ctx context.Context, c *gin.Context) (*Exam, error) {
+// teacherExams matches the exams a teacher can open: their own, and the ones
+// another teacher shared with them.
+func teacherExams(user currentUser) bson.M {
+	return bson.M{"$or": bson.A{bson.M{"owner_id": user.ID}, bson.M{"shared_with": user.Email}}}
+}
+
+// loadExam loads an exam the teacher owns or that was shared with them. Teachers
+// it's shared with see and do everything the owner does, except what checks
+// ownsExam: changing the questions, deleting the exam and sharing it.
+func loadExam(ctx context.Context, c *gin.Context) (*Exam, error) {
 	examID, err := idParam(c, "id")
 	if err != nil {
 		return nil, err
 	}
+	filter := teacherExams(userFrom(c))
+	filter["_id"] = examID
 	var exam Exam
-	err = examsCol().FindOne(ctx, bson.M{"_id": examID, "owner_id": userFrom(c).ID}).Decode(&exam)
+	err = examsCol().FindOne(ctx, filter).Decode(&exam)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, errExamNotFound
 	}
 	return &exam, err
 }
 
-// modifyExam loads the teacher's exam, applies change, and saves the fields it
-// returns. The write only lands if nothing else changed the exam in between
-// (including a student starting it); otherwise it reloads and tries again.
+func ownsExam(c *gin.Context, e *Exam) bool { return e.OwnerID == userFrom(c).ID }
+
+// ownerOnly is the error for something only the teacher who made the exam may do.
+func ownerOnly(what string) error {
+	return newError(http.StatusForbidden, "Only the teacher who created this exam can %s.", what)
+}
+
+// loadOwnExam is loadExam for what only the exam's creator may do; ownerAction
+// says what that is, for the error a teacher it's shared with gets.
+func loadOwnExam(ctx context.Context, c *gin.Context, ownerAction string) (*Exam, error) {
+	exam, err := loadExam(ctx, c)
+	if err == nil && !ownsExam(c, exam) {
+		return nil, ownerOnly(ownerAction)
+	}
+	return exam, err
+}
+
+// modifyExam loads the teacher's exam (their own or one shared with them),
+// applies change, and saves the fields it returns. The write only lands if
+// nothing else changed the exam in between (including a student starting it);
+// otherwise it reloads and tries again.
 func modifyExam(ctx context.Context, c *gin.Context, change func(e *Exam) (bson.M, error)) (*Exam, error) {
+	return modifyExamAs(ctx, c, "", change)
+}
+
+// modifyOwnExam is modifyExam for changes only the exam's creator may make,
+// such as its questions.
+func modifyOwnExam(ctx context.Context, c *gin.Context, ownerAction string, change func(e *Exam) (bson.M, error)) (*Exam, error) {
+	return modifyExamAs(ctx, c, ownerAction, change)
+}
+
+func modifyExamAs(ctx context.Context, c *gin.Context, ownerAction string, change func(e *Exam) (bson.M, error)) (*Exam, error) {
 	for try := 0; try < 3; try++ {
-		exam, err := loadOwnedExam(ctx, c)
+		exam, err := loadExam(ctx, c)
 		if err != nil {
 			return nil, err
+		}
+		if ownerAction != "" && !ownsExam(c, exam) {
+			return nil, ownerOnly(ownerAction)
 		}
 		fields, err := change(exam)
 		if err != nil {
