@@ -505,9 +505,9 @@ func TestOldAICheckOfAMatchingAnswerIsRedone(t *testing.T) {
 
 func TestRollNumberForAStudentWithAnotherEmail(t *testing.T) {
 	cases := map[string]string{
-		"n210368@rguktn.ac.in":            "N210368",
-		"Keerthanadarapaneni24@gmail.com": "N230758", // her RGUKT email was lost
-		"teacher@examify.test":            "teacher",
+		"n210368@rguktn.ac.in":      "N210368",
+		"Gunakeerthana15@gmail.com": "N230758", // her RGUKT email was lost
+		"teacher@examify.test":      "teacher",
 	}
 	for email, want := range cases {
 		if got := rollNumber(email); got != want {

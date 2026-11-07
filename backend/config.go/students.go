@@ -8,7 +8,7 @@ import "strings"
 // results, exports and answer sheets. The frontend has the same list in
 // src/lib/format.js, so change both together.
 var studentRollNumbers = map[string]string{
-	"keerthanadarapaneni24@gmail.com": "N230758",
+	"gunakeerthana15@gmail.com": "N230758",
 }
 
 // StudentRoll is the roll number of a student on that list.

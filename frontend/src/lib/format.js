@@ -121,7 +121,7 @@ export const letter = (index) => String.fromCharCode(65 + index);
 // with the roll number to show for them. The backend has the same list in
 // config.go/students.go, so change both together.
 const ROLL_NUMBERS = {
-  "keerthanadarapaneni24@gmail.com": "N230758",
+  "gunakeerthana15@gmail.com": "N230758",
 };
 
 export function rollFromEmail(email = "") {
