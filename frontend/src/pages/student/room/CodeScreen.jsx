@@ -328,7 +328,7 @@ export default function CodeScreen({ info, state, setContext, questions, answers
   const code = question ? codeOf(question, answer) : "";
   const language = question ? languageOf(question, answer) : "";
   const upToDate = checkIsCurrent(run, question || {}, answer);
-  const maxRuns = info.max_runs || 0;
+  const maxRuns = state?.max_runs ?? info.max_runs ?? 0; // the teacher can change it mid-exam
   const checksLeft = maxRuns > 0 ? Math.max(0, maxRuns - (run?.count || 0)) : null;
 
   const runNow = async () => {

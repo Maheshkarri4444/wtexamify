@@ -66,6 +66,7 @@ const EVENTS = {
   teacher_unlock: { label: "Unlocked by teacher", icon: Unlock },
   refreshed: { label: "New set (refresh code)", icon: RefreshCw },
   teacher_new_set: { label: "New set from dashboard", icon: RefreshCw },
+  teacher_reopen: { label: "Reopened from dashboard", icon: LogIn },
   time_added: { label: "Time added", icon: Clock3 },
   wrong_code: { label: "Wrong code entered", icon: KeyRound, bad: true },
   code_blocked: { label: "Code entry paused", icon: Lock, bad: true },

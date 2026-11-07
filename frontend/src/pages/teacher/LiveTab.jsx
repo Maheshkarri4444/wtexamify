@@ -16,6 +16,7 @@ import {
   Plus,
   Radio,
   RefreshCw,
+  RotateCcw,
   Search,
   Send,
   ShieldAlert,
@@ -103,6 +104,14 @@ function confirmDetails(confirm, writing) {
         tone: "danger",
         icon: Send,
       };
+    case "reopen":
+      return {
+        title: `Reopen ${row.roll}'s exam?`,
+        attention: `${row.roll} goes back to writing with the answers they saved, and their marks are cleared until they submit again. If their time is up, they get 5 minutes. Ask them to reload the exam page.`,
+        confirmLabel: "Reopen",
+        tone: "primary",
+        icon: RotateCcw,
+      };
     case "extend_all":
       return {
         title: `Add ${minutes} minutes for everyone writing?`,
@@ -157,11 +166,17 @@ export default function LiveTab() {
     setBusy(true);
     try {
       await teacherApi.attemptAction(exam.id, row.attempt_id, action, minutes);
-      const messages = { unlock: `${row.roll} unlocked.`, new_set: `${row.roll} got a new set.`, extend: `Added ${minutes} minutes for ${row.roll}.`, submit: `${row.roll} submitted.` };
+      const messages = {
+        unlock: `${row.roll} unlocked.`,
+        new_set: `${row.roll} got a new set.`,
+        extend: `Added ${minutes} minutes for ${row.roll}.`,
+        submit: `${row.roll} submitted.`,
+        reopen: `${row.roll} can write again. Ask them to reload the exam page.`,
+      };
       toast.success(messages[action]);
       setConfirm(null);
       refresh();
-      if (action === "submit") reload();
+      if (action === "submit" || action === "reopen") reload();
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -315,6 +330,8 @@ export default function LiveTab() {
                                 writing && { label: "Give a new set", icon: RefreshCw, onSelect: () => setConfirm({ action: "new_set", row }), hint: "clears answers" },
                                 writing && { label: "Add 5 minutes", icon: Plus, onSelect: () => setConfirm({ action: "extend", row, minutes: 5 }) },
                                 writing && { label: "Submit now", icon: Send, danger: true, onSelect: () => setConfirm({ action: "submit", row }) },
+                                row.status === "submitted" && exam.status === "live" && "divider",
+                                row.status === "submitted" && exam.status === "live" && { label: "Reopen (unsubmit)", icon: RotateCcw, onSelect: () => setConfirm({ action: "reopen", row }), hint: "keeps answers" },
                               ]}
                             />
                           )}

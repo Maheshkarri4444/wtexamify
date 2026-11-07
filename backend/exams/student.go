@@ -88,6 +88,7 @@ type attemptState struct {
 	LockReason       string             `json:"lock_reason"`
 	Violations       int                `json:"violations"`
 	MaxViolations    int                `json:"max_violations"`
+	MaxRuns          int                `json:"max_runs"` // checks per code question, as the teacher has it now
 	SetNumber        int                `json:"set_number"`
 	PaperVersion     int                `json:"paper_version"`
 	AnsweredCount    int                `json:"answered_count"`
@@ -144,7 +145,7 @@ func summaryFor(e *Exam, att *Attempt) *attemptSummary {
 func stateFor(e *Exam, att *Attempt) attemptState {
 	state := attemptState{
 		ID: att.ID, ExamID: att.ExamID, Status: att.Status, Locked: att.Locked, LockReason: att.LockReason,
-		Violations: att.Violations, MaxViolations: e.Settings.MaxViolations,
+		Violations: att.Violations, MaxViolations: e.Settings.MaxViolations, MaxRuns: e.Settings.MaxRuns,
 		SetNumber: att.SetNumber, PaperVersion: att.PaperVersion,
 		AnsweredCount: att.AnsweredCount, Total: len(att.QuestionIDs),
 		StartedAt: att.StartedAt, DeadlineAt: att.DeadlineAt, ServerNow: time.Now(),

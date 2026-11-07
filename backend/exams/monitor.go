@@ -512,6 +512,9 @@ func formatMarks(v float64) string {
 	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
+// reopenMinutes is the least time a student reopened from the dashboard gets to finish.
+const reopenMinutes = 5
+
 // attemptAction lets the teacher help or act on one student from the dashboard.
 func attemptAction(c *gin.Context) {
 	var req struct {
@@ -548,6 +551,42 @@ func attemptAction(c *gin.Context) {
 			return
 		}
 		queueGrading(att.ID)
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+		return
+	}
+	if req.Action == "reopen" {
+		// Undo a submission made by mistake: the student writes again with what they
+		// saved, and their marks wait until they submit again. If their time is up,
+		// they get reopenMinutes to finish.
+		if att.Status != AttemptSubmitted {
+			respondErr(c, newError(http.StatusConflict, "This student is still writing."))
+			return
+		}
+		if exam.Status != StatusLive {
+			respondErr(c, newError(http.StatusConflict, "The exam isn't live, so the student couldn't write. Make it live again first."))
+			return
+		}
+		now := time.Now()
+		deadline := att.DeadlineAt
+		if floor := now.Add(reopenMinutes * time.Minute); deadline.Before(floor) {
+			deadline = floor
+		}
+		res, err := attemptsCol().UpdateOne(ctx, bson.M{"_id": att.ID, "status": AttemptSubmitted}, bson.M{
+			"$set": bson.M{
+				"status": AttemptInProgress, "submit_reason": "", "score": 0, "max_score": 0, "results": nil,
+				"grading": "", "locked": false, "lock_reason": "", "deadline_at": deadline,
+			},
+			"$unset": bson.M{"submitted_at": ""},
+			"$push":  bson.M{"events": eventPush(Event{At: now, Type: "teacher_reopen", Detail: "Reopened from the dashboard"})},
+		})
+		if err != nil {
+			respondErr(c, err)
+			return
+		}
+		if res.MatchedCount == 0 {
+			respondErr(c, newError(http.StatusConflict, "This student is writing again already."))
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 		return
 	}
