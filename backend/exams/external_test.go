@@ -521,8 +521,8 @@ func TestRollNumberForAStudentWithAnotherEmail(t *testing.T) {
 	}
 }
 
-func TestExternalsAllowTenChecksPerQuestion(t *testing.T) {
-	if got := defaultSettings(TypeExternal).MaxRuns; got != 10 {
-		t.Fatalf("a new external allows %d checks per question, want 10", got)
+func TestExternalsAllowFiveChecksPerQuestion(t *testing.T) {
+	if got := defaultSettings(TypeExternal).MaxRuns; got != 5 {
+		t.Fatalf("a new external allows %d checks per question, want 5", got)
 	}
 }

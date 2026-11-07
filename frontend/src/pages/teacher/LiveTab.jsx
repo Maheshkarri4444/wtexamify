@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
+  AlertTriangle,
   CheckCircle2,
   CircleDashed,
   Clock3,
@@ -72,6 +73,49 @@ function StatusHelp({ state, reason }) {
   );
 }
 
+// Every action on the board except Unlock asks first and says what it will do:
+// a stray click on "Give a new set" once wiped a student's answers mid-exam.
+function confirmDetails(confirm, writing) {
+  if (!confirm) return null;
+  const { action, row, minutes } = confirm;
+  switch (action) {
+    case "new_set":
+      return {
+        title: `Give ${row.roll} a new set?`,
+        attention: `This clears all of ${row.roll}'s answers and Run results and gives them a different set. It can't be undone.`,
+        confirmLabel: "Give a new set",
+        tone: "danger",
+        icon: RefreshCw,
+      };
+    case "extend":
+      return {
+        title: `Add ${minutes} minutes for ${row.roll}?`,
+        attention: `Only ${row.roll} gets the extra time: their deadline moves ${minutes} minutes later.`,
+        confirmLabel: `Add ${minutes} minutes`,
+        tone: "primary",
+        icon: Plus,
+      };
+    case "submit":
+      return {
+        title: `Submit ${row.roll}'s exam now?`,
+        attention: "Their saved answers are marked and they can't write any more. It can't be undone.",
+        confirmLabel: "Submit now",
+        tone: "danger",
+        icon: Send,
+      };
+    case "extend_all":
+      return {
+        title: `Add ${minutes} minutes for everyone writing?`,
+        attention: `All ${writing} student${writing === 1 ? "" : "s"} writing right now get ${minutes} more minutes.`,
+        confirmLabel: `Add ${minutes} minutes`,
+        tone: "primary",
+        icon: Plus,
+      };
+    default:
+      return null;
+  }
+}
+
 export default function LiveTab() {
   const { bundle, reload } = useOutletContext();
   const { exam } = bundle;
@@ -79,7 +123,7 @@ export default function LiveTab() {
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [viewing, setViewing] = useState(null);
-  const [confirmSubmit, setConfirmSubmit] = useState(null);
+  const [confirm, setConfirm] = useState(null); // an action waiting for the teacher to confirm it
   const [busy, setBusy] = useState(false);
   const offset = useRef(0);
   const now = useNow(1000);
@@ -115,7 +159,7 @@ export default function LiveTab() {
       await teacherApi.attemptAction(exam.id, row.attempt_id, action, minutes);
       const messages = { unlock: `${row.roll} unlocked.`, new_set: `${row.roll} got a new set.`, extend: `Added ${minutes} minutes for ${row.roll}.`, submit: `${row.roll} submitted.` };
       toast.success(messages[action]);
-      setConfirmSubmit(null);
+      setConfirm(null);
       refresh();
       if (action === "submit") reload();
     } catch (error) {
@@ -126,17 +170,22 @@ export default function LiveTab() {
   };
 
   const extendAll = async (minutes) => {
+    setBusy(true);
     try {
       const { extended } = await teacherApi.extendAll(exam.id, minutes);
       toast.success(`Added ${minutes} minutes for ${extended} student${extended === 1 ? "" : "s"} still writing.`);
+      setConfirm(null);
       refresh();
     } catch (error) {
       toast.error(error.message);
+    } finally {
+      setBusy(false);
     }
   };
 
   if (!data) return <PageLoader label="Connecting to the exam room…" />;
   const summary = data.summary;
+  const details = confirmDetails(confirm, summary.in_progress || 0);
 
   return (
     <div className="space-y-6">
@@ -263,9 +312,9 @@ export default function LiveTab() {
                                 { label: "View answers", icon: Eye, onSelect: () => setViewing(row.attempt_id) },
                                 writing && "divider",
                                 writing && row.locked && { label: "Unlock", icon: Unlock, onSelect: () => act(row, "unlock") },
-                                writing && { label: "Give a new set", icon: RefreshCw, onSelect: () => act(row, "new_set"), hint: "clears answers" },
-                                writing && { label: "Add 5 minutes", icon: Plus, onSelect: () => act(row, "extend", 5) },
-                                writing && { label: "Submit now", icon: Send, danger: true, onSelect: () => setConfirmSubmit(row) },
+                                writing && { label: "Give a new set", icon: RefreshCw, onSelect: () => setConfirm({ action: "new_set", row }), hint: "clears answers" },
+                                writing && { label: "Add 5 minutes", icon: Plus, onSelect: () => setConfirm({ action: "extend", row, minutes: 5 }) },
+                                writing && { label: "Submit now", icon: Send, danger: true, onSelect: () => setConfirm({ action: "submit", row }) },
                               ]}
                             />
                           )}
@@ -295,7 +344,7 @@ export default function LiveTab() {
             <p className="mt-1 text-[13px] text-muted">For a power cut or a late start. Students who haven't started get the full time anyway.</p>
             <div className="mt-3 flex gap-2">
               {[2, 5, 10].map((minutes) => (
-                <Button key={minutes} variant="secondary" size="sm" icon={Plus} onClick={() => extendAll(minutes)} disabled={!summary.in_progress}>
+                <Button key={minutes} variant="secondary" size="sm" icon={Plus} onClick={() => setConfirm({ action: "extend_all", minutes })} disabled={!summary.in_progress}>
                   {minutes} min
                 </Button>
               ))}
@@ -313,16 +362,25 @@ export default function LiveTab() {
 
       <AttemptDrawer examId={exam.id} examType={exam.type} examTitle={exam.title} attemptId={viewing} onClose={() => setViewing(null)} />
       <ConfirmModal
-        open={Boolean(confirmSubmit)}
-        onClose={() => setConfirmSubmit(null)}
-        onConfirm={() => act(confirmSubmit, "submit")}
+        open={Boolean(details)}
+        onClose={() => setConfirm(null)}
+        onConfirm={() => (confirm.action === "extend_all" ? extendAll(confirm.minutes) : act(confirm.row, confirm.action, confirm.minutes))}
         loading={busy}
-        tone="danger"
-        icon={Send}
-        title={`Submit ${confirmSubmit?.roll}'s exam now?`}
-        description="Their saved answers are marked and they can't write any more."
-        confirmLabel="Submit now"
-      />
+        tone={details?.tone}
+        icon={details?.icon}
+        title={details?.title}
+        confirmLabel={details?.confirmLabel}
+      >
+        {details && (
+          <div className="flex items-start gap-2.5 rounded-lg border border-warning/40 bg-warning-soft px-3 py-2.5 text-[13px] leading-relaxed text-warning-text">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>
+              <span className="font-semibold">Attention: </span>
+              {details.attention}
+            </p>
+          </div>
+        )}
+      </ConfirmModal>
     </div>
   );
 }

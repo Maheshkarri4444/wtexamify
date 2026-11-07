@@ -341,7 +341,9 @@ func patchExam(c *gin.Context) {
 	}
 	ctx, cancel := dbCtx()
 	defer cancel()
+	durationChange := 0 // minutes the duration moved; the deadlines of students writing move with it
 	exam, err := modifyExam(ctx, c, func(e *Exam) (bson.M, error) {
+		durationChange = 0
 		fields := bson.M{}
 		if req.Title != nil {
 			title := strings.TrimSpace(*req.Title)
@@ -374,6 +376,7 @@ func patchExam(c *gin.Context) {
 			if *req.DurationMinutes < 1 || *req.DurationMinutes > 600 {
 				return nil, newError(http.StatusBadRequest, "Duration must be between 1 and 600 minutes.")
 			}
+			durationChange = *req.DurationMinutes - e.DurationMinutes
 			e.DurationMinutes, fields["duration_minutes"] = *req.DurationMinutes, *req.DurationMinutes
 		}
 		if patch := req.Settings; patch != nil {
@@ -442,7 +445,29 @@ func patchExam(c *gin.Context) {
 		respondErr(c, err)
 		return
 	}
+	if durationChange != 0 {
+		if err := shiftLiveDeadlines(ctx, exam.ID, durationChange); err != nil {
+			respondErr(c, newError(http.StatusInternalServerError, "The new duration is saved, but the deadlines of students already writing didn't move. Use Add time for everyone on the Live tab."))
+			return
+		}
+	}
 	respondBundle(ctx, c, exam, nil)
+}
+
+// shiftLiveDeadlines moves the deadline of everyone still writing by the change
+// in the exam's duration, so editing the duration during an exam reaches the
+// students who have started, like Add time does. Submitted sheets aren't
+// touched, and a shorter duration never ends a sheet on the spot: no deadline
+// moves earlier than a minute from now.
+func shiftLiveDeadlines(ctx context.Context, examID primitive.ObjectID, minutes int) error {
+	deadline := any(bson.M{"$add": bson.A{"$deadline_at", int64(minutes) * int64(time.Minute/time.Millisecond)}})
+	if minutes < 0 {
+		deadline = bson.M{"$max": bson.A{deadline, bson.M{"$min": bson.A{"$deadline_at", time.Now().Add(time.Minute)}}}}
+	}
+	_, err := attemptsCol().UpdateMany(ctx,
+		bson.M{"exam_id": examID, "status": AttemptInProgress},
+		mongo.Pipeline{{{Key: "$set", Value: bson.M{"deadline_at": deadline}}}})
+	return err
 }
 
 func deleteExam(c *gin.Context) {

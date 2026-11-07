@@ -58,7 +58,7 @@ func TestKeyOverItsDailyLimitRestsAWhile(t *testing.T) {
 		t.Fatal("the spent key should rest")
 	}
 	// Google suggests 30 s, but the daily quota comes back only at the reset, so
-	// the key rests 15 minutes (or until the reset, if that's sooner) and is then tried again.
+	// the key rests until then (an hour at most) and is then tried again.
 	want := min(untilQuotaReset(time.Now()), dailyQuotaRest)
 	if gap := time.Until(until) - want; gap > 5*time.Second || gap < -5*time.Second {
 		t.Fatalf("the spent key should rest %s, rests %s", want.Round(time.Second), time.Until(until).Round(time.Second))
@@ -114,8 +114,8 @@ func TestOverloadedModelGivesWayAfterTwoKeys(t *testing.T) {
 	if err != nil || v.Model != "model-b" {
 		t.Fatalf("the next model should answer: %+v %v", v, err)
 	}
-	// Two keys, each tried twice, then the next model, not all five keys.
-	if got := strings.Join(*asked, " "); got != "k1/model-a k1/model-a k2/model-a k2/model-a k1/model-b" {
+	// Two keys, once each, then the next model: not all five keys, and no key asked twice.
+	if got := strings.Join(*asked, " "); got != "k1/model-a k2/model-a k1/model-b" {
 		t.Fatalf("asked %s", got)
 	}
 }
