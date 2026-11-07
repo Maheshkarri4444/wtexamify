@@ -76,7 +76,7 @@ function StatusHelp({ state, reason }) {
 
 // Every action on the board except Unlock asks first and says what it will do:
 // a stray click on "Give a new set" once wiped a student's answers mid-exam.
-function confirmDetails(confirm, writing) {
+function confirmDetails(confirm, writing, submitted) {
   if (!confirm) return null;
   const { action, row, minutes } = confirm;
   switch (action) {
@@ -110,6 +110,15 @@ function confirmDetails(confirm, writing) {
         attention: `${row.roll} goes back to writing with the answers they saved, and their marks are cleared until they submit again. If their time is up, they get 5 minutes. Ask them to reload the exam page.`,
         confirmLabel: "Reopen",
         tone: "primary",
+        icon: RotateCcw,
+      };
+    case "reopen_all":
+      return {
+        title: `Unsubmit all ${submitted} submitted sheet${submitted === 1 ? "" : "s"}?`,
+        attention:
+          "Every submitted student goes back to writing with the answers they saved, and their marks are cleared until they submit again. Anyone whose time is up gets 5 minutes. They need to reload the exam page.",
+        confirmLabel: "Unsubmit all",
+        tone: "danger",
         icon: RotateCcw,
       };
     case "extend_all":
@@ -198,9 +207,38 @@ export default function LiveTab() {
     }
   };
 
+  // For mistakes and errors: no confirm for unlocking (like Unlock), one for unsubmitting.
+  const unlockEveryone = async () => {
+    setBusy(true);
+    try {
+      const { unlocked } = await teacherApi.unlockAll(exam.id);
+      toast.success(unlocked ? `Unlocked ${unlocked} student${unlocked === 1 ? "" : "s"}.` : "Nobody was locked.");
+      refresh();
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reopenEveryone = async () => {
+    setBusy(true);
+    try {
+      const { reopened } = await teacherApi.reopenAll(exam.id);
+      toast.success(`Reopened ${reopened} sheet${reopened === 1 ? "" : "s"}. Ask those students to reload the exam page.`);
+      setConfirm(null);
+      refresh();
+      reload();
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!data) return <PageLoader label="Connecting to the exam room…" />;
   const summary = data.summary;
-  const details = confirmDetails(confirm, summary.in_progress || 0);
+  const details = confirmDetails(confirm, summary.in_progress || 0, counts.submitted || 0);
 
   return (
     <div className="space-y-6">
@@ -367,6 +405,28 @@ export default function LiveTab() {
               ))}
             </div>
           </Card>
+          <Card className="p-5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-ink">
+              <ShieldAlert className="h-4 w-4 text-muted" />
+              Fix for everyone
+              <InfoTip text="For mistakes and errors. Unlock all lets every locked student back in at once. Unsubmit all puts every submitted sheet back to writing, for example after End exam was clicked by mistake (make the exam live again first)." />
+            </div>
+            <p className="mt-1 text-[13px] text-muted">Unlock every locked paper, or reopen every submitted sheet.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button variant="secondary" size="sm" icon={Unlock} onClick={unlockEveryone} disabled={!counts.locked || busy}>
+                Unlock all{counts.locked ? ` (${counts.locked})` : ""}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={RotateCcw}
+                onClick={() => setConfirm({ action: "reopen_all" })}
+                disabled={!counts.submitted || exam.status !== "live" || busy}
+              >
+                Unsubmit all{counts.submitted ? ` (${counts.submitted})` : ""}
+              </Button>
+            </div>
+          </Card>
           <p className="flex items-center gap-2 px-1 text-xs text-muted">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
@@ -381,7 +441,11 @@ export default function LiveTab() {
       <ConfirmModal
         open={Boolean(details)}
         onClose={() => setConfirm(null)}
-        onConfirm={() => (confirm.action === "extend_all" ? extendAll(confirm.minutes) : act(confirm.row, confirm.action, confirm.minutes))}
+        onConfirm={() => {
+          if (confirm.action === "extend_all") extendAll(confirm.minutes);
+          else if (confirm.action === "reopen_all") reopenEveryone();
+          else act(confirm.row, confirm.action, confirm.minutes);
+        }}
         loading={busy}
         tone={details?.tone}
         icon={details?.icon}

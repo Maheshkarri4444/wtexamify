@@ -37,7 +37,6 @@ export default function OverviewTab() {
     s.block_extended_display && "Single monitor",
     !s.allow_leaving && "Lock on leaving the tab",
     !s.allow_clipboard && "No copy/paste",
-    s.lock_on_rejoin && "Lock on rejoin",
   ].filter(Boolean);
   const rows = [
     { icon: Timer, label: "Time per student", value: formatMinutes(exam.duration_minutes) },

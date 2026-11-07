@@ -87,6 +87,8 @@ export const teacherApi = {
   removeStudents: (id, emails, all = false) => post(`${exam(id)}/students/remove`, { emails, all }),
   monitor: (id) => get(`${exam(id)}/monitor`),
   extendAll: (id, minutes) => post(`${exam(id)}/extend`, { minutes }),
+  unlockAll: (id) => post(`${exam(id)}/unlock-all`),
+  reopenAll: (id) => post(`${exam(id)}/reopen-all`),
   results: (id) => get(`${exam(id)}/results`),
   attempt: (id, aid) => get(`${exam(id)}/attempts/${aid}`),
   answerSheets: (id) => get(`${exam(id)}/answer-sheets`, { timeout: EXPORT_TIMEOUT_MS }),

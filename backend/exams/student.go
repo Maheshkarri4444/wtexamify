@@ -123,7 +123,7 @@ func infoFor(e *Exam, email string) studentExamInfo {
 			BlockExtendedDisplay: e.Settings.BlockExtendedDisplay,
 			LockOnLeave:          !e.Settings.AllowLeaving,
 			BlockClipboard:       !e.Settings.AllowClipboard && !clipboardAlwaysAllowed(email),
-			LockOnRejoin:         e.Settings.LockOnRejoin,
+			LockOnRejoin:         false, // rejoining no longer locks the paper
 		},
 		LiveAt: e.LiveAt,
 	}
@@ -369,17 +369,18 @@ func resumeAttempt(ctx context.Context, c *gin.Context, exam *Exam, att *Attempt
 			return
 		}
 	}
-	if att.Status == AttemptInProgress && exam.Settings.LockOnRejoin && !att.Locked && now.Sub(att.StartedAt) > rejoinWindow {
-		reason := "You left the exam page and came back."
+	if att.Status == AttemptInProgress && now.Sub(att.StartedAt) > rejoinWindow {
+		// Coming back (a reload, or restarting the laptop) no longer locks the paper,
+		// whatever the exam's old "lock on rejoin" setting says: it's only noted for
+		// the teacher, so a student who had to restart can carry on without help.
 		_, err := attemptsCol().UpdateOne(ctx, bson.M{"_id": att.ID, "status": AttemptInProgress}, bson.M{
-			"$set":  bson.M{"locked": true, "lock_reason": reason, "last_seen_at": now},
+			"$set":  bson.M{"last_seen_at": now},
 			"$push": bson.M{"events": eventPush(Event{At: now, Type: "rejoined"})},
 		})
 		if err != nil {
 			respondErr(c, err)
 			return
 		}
-		att.Locked, att.LockReason = true, reason
 	}
 	respondPaper(c, exam, att)
 }

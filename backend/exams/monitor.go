@@ -669,3 +669,68 @@ func extendAll(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"extended": res.ModifiedCount})
 }
+
+// unlockAll unlocks every locked paper at once, as Unlock does for one student.
+func unlockAll(c *gin.Context) {
+	ctx, cancel := dbCtx()
+	defer cancel()
+	exam, err := loadExam(ctx, c)
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	res, err := attemptsCol().UpdateMany(ctx,
+		bson.M{"exam_id": exam.ID, "status": AttemptInProgress, "locked": true},
+		bson.M{
+			"$set":  bson.M{"locked": false, "lock_reason": "", "code_failures": 0, "code_blocked_until": nil},
+			"$push": bson.M{"events": eventPush(Event{At: time.Now(), Type: "teacher_unlock", Detail: "Unlocked everyone from the dashboard"})},
+		})
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"unlocked": res.ModifiedCount})
+}
+
+// reopenAll puts every submitted sheet back to writing, as Reopen does for one
+// student: for when the exam was ended or sheets were submitted by mistake.
+func reopenAll(c *gin.Context) {
+	ctx, cancel := dbCtx()
+	defer cancel()
+	exam, err := loadExam(ctx, c)
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	if exam.Status != StatusLive {
+		respondErr(c, newError(http.StatusConflict, "The exam isn't live, so students couldn't write. Make it live again first."))
+		return
+	}
+	ids, err := attemptsCol().Distinct(ctx, "_id", bson.M{"exam_id": exam.ID, "status": AttemptSubmitted})
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	if len(ids) == 0 {
+		c.JSON(http.StatusOK, gin.H{"reopened": 0})
+		return
+	}
+	now := time.Now()
+	res, err := attemptsCol().UpdateMany(ctx, bson.M{"_id": bson.M{"$in": ids}, "status": AttemptSubmitted}, mongo.Pipeline{
+		{{Key: "$set", Value: bson.M{
+			"status": AttemptInProgress, "submit_reason": "", "score": 0, "max_score": 0, "results": nil,
+			"grading": "", "locked": false, "lock_reason": "",
+			// Anyone whose time is up gets reopenMinutes to finish.
+			"deadline_at": bson.M{"$max": bson.A{"$deadline_at", now.Add(reopenMinutes * time.Minute)}},
+		}}},
+		{{Key: "$unset", Value: bson.A{"submitted_at"}}},
+	})
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	_, _ = attemptsCol().UpdateMany(ctx, bson.M{"_id": bson.M{"$in": ids}, "status": AttemptInProgress}, bson.M{
+		"$push": bson.M{"events": eventPush(Event{At: now, Type: "teacher_reopen", Detail: "Reopened everyone from the dashboard"})},
+	})
+	c.JSON(http.StatusOK, gin.H{"reopened": res.ModifiedCount})
+}

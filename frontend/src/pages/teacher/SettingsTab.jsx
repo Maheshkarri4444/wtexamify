@@ -186,14 +186,6 @@ export default function SettingsTab() {
               description="Copy, paste, cut and right-click are refused with a warning. They're never counted as cheating."
             />
           </div>
-          <div className="p-5">
-            <Switch
-              checked={s.lock_on_rejoin}
-              onChange={(v) => setSetting("lock_on_rejoin", v)}
-              label="Lock when a student comes back" info="Reloading or reopening the exam locks it, so closing the tab can't be used to look something up."
-              description="Reloading or reopening the exam locks it, so closing the tab can't be used to look something up."
-            />
-          </div>
         </div>
       </Card>
 

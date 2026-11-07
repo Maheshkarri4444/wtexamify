@@ -45,6 +45,8 @@ func RegisterRoutes(r *gin.Engine) {
 
 		teacher.GET("/exams/:id/monitor", monitor)
 		teacher.POST("/exams/:id/extend", extendAll)
+		teacher.POST("/exams/:id/unlock-all", unlockAll)
+		teacher.POST("/exams/:id/reopen-all", reopenAll)
 		teacher.GET("/exams/:id/results", results)
 		teacher.GET("/exams/:id/answer-sheets", answerSheets)
 		teacher.GET("/exams/:id/attempts/:aid", attemptDetail)
