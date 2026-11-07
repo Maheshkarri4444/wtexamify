@@ -16,7 +16,7 @@ import (
 const (
 	// A student waits this long between checks, so one exam hall can't flood the API.
 	runCooldown = 5 * time.Second
-	runTimeout  = 150 * time.Second // two checks (public, then private) with model fallbacks
+	runTimeout  = 150 * time.Second // one check, going round the models again while Google is busy
 )
 
 // runView is a check result as the student sees it.

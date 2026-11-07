@@ -1,9 +1,12 @@
 package exams
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -184,5 +187,111 @@ func TestSlowKeyDoesNotRestTheModelForEveryone(t *testing.T) {
 	}
 	if !strings.HasSuffix(strings.Join(*asked, " "), "quick/model-a") {
 		t.Fatalf("asked %s", strings.Join(*asked, " "))
+	}
+}
+
+// What Google says when it has no capacity for a key and model just now.
+const noCapacityBody = `{"error": {"code": 429, "message": "Resource has been exhausted (e.g. check quota).", "status": "RESOURCE_EXHAUSTED"}}`
+
+func geminiReply(verdict string) string {
+	text, _ := json.Marshal(verdict)
+	return fmt.Sprintf(`{"candidates": [{"content": {"parts": [{"text": %s}]}, "finishReason": "STOP"}]}`, text)
+}
+
+func TestNoCapacityForAMomentIsAskedAgain(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "k1")
+	t.Setenv("GEMINI_BACKUP_API_KEYS", "")
+	t.Setenv("GEMINI_MODELS", "model-a")
+	var mu sync.Mutex
+	calls := 0
+	asked := fakeGemini(t, func(_, _ string) (int, string) {
+		mu.Lock()
+		defer mu.Unlock()
+		if calls++; calls <= 2 {
+			return http.StatusTooManyRequests, noCapacityBody
+		}
+		return http.StatusOK, geminiAnswer(75)
+	})
+	step, rest := retryStep, capacityPause
+	aiRetryFor, retryStep, capacityPause = 5*time.Second, 10*time.Millisecond, 10*time.Millisecond
+	t.Cleanup(func() { retryStep, capacityPause = step, rest })
+
+	v, err := askOnce(t)
+	if err != nil || v.Percent != 75 {
+		t.Fatalf("Google having no capacity for a moment shouldn't make the check busy: %+v %v", v, err)
+	}
+	if len(*asked) != 3 {
+		t.Fatalf("expected two refusals, then an answer once the key came free, asked %v", *asked)
+	}
+}
+
+func TestTwoRefusalsMoveTheCheckToTheNextModel(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "k1")
+	t.Setenv("GEMINI_BACKUP_API_KEYS", "k2,k3,k4,k5")
+	t.Setenv("GEMINI_MODELS", "model-a,model-b")
+	asked := fakeGemini(t, func(_, model string) (int, string) {
+		if model == "model-a" {
+			return http.StatusTooManyRequests, noCapacityBody
+		}
+		return http.StatusOK, geminiAnswer(80)
+	})
+	v, err := askOnce(t)
+	if err != nil || v.Model != "model-b" {
+		t.Fatalf("the next model should answer: %+v %v", v, err)
+	}
+	// Not all five keys: each failed request uses up quota other students need.
+	if got := strings.Join(*asked, " "); got != "k1/model-a k2/model-a k1/model-b" {
+		t.Fatalf("asked %s", got)
+	}
+}
+
+func TestModelThatKeepsFailingRestsForEveryone(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "k1")
+	t.Setenv("GEMINI_BACKUP_API_KEYS", "k2,k3,k4,k5,k6,k7")
+	t.Setenv("GEMINI_MODELS", "model-a,model-b")
+	asked := fakeGemini(t, func(_, model string) (int, string) {
+		if model == "model-a" {
+			time.Sleep(100 * time.Millisecond)
+		}
+		return http.StatusOK, geminiAnswer(80)
+	})
+	previous := aiHTTP
+	aiHTTP = &http.Client{Timeout: 30 * time.Millisecond}
+	t.Cleanup(func() { aiHTTP = previous })
+
+	for i := 0; i < overloadedAfter; i++ {
+		if v, err := askOnce(t); err != nil || v.Model != "model-b" {
+			t.Fatalf("check %d: %+v %v", i+1, v, err)
+		}
+	}
+	if _, resting := pausedUntil(modelName("model-a")); !resting {
+		t.Fatalf("six timeouts in a row should rest model-a for everyone, asked %v", *asked)
+	}
+	*asked = (*asked)[:0]
+	if v, err := askOnce(t); err != nil || v.Model != "model-b" || strings.Join(*asked, " ") != "k7/model-b" {
+		t.Fatalf("a resting model isn't asked: %+v %v, asked %v", v, err, *asked)
+	}
+}
+
+func TestOneRequestChecksPublicAndPrivateTests(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "k1")
+	t.Setenv("GEMINI_BACKUP_API_KEYS", "")
+	t.Setenv("GEMINI_MODELS", "model-a")
+	verdict := `{"percent": 40, "tests": [{"id": "t1", "executes": false}, {"id": "t2", "executes": true}]}`
+	asked := fakeGemini(t, func(_, _ string) (int, string) { return http.StatusOK, geminiReply(verdict) })
+	q := codeQuestion() // t1 public, t2 private
+
+	v, err := checkWithAI(t.Context(), q, "sql", "select 1", "")
+	if err != nil || len(*asked) != 1 {
+		t.Fatalf("one request for all the tests: %v, asked %v", err, *asked)
+	}
+	if v.Tests[0].Executes || !v.Tests[1].Skipped || v.Tests[1].Executes {
+		t.Fatalf("with a public test failing, the private one counts as not run: %+v", v.Tests)
+	}
+
+	verdict = `{"percent": 70, "tests": [{"id": "t1", "executes": true}, {"id": "t2", "executes": false}]}`
+	v, err = checkWithAI(t.Context(), q, "sql", "select 1", "")
+	if err != nil || len(*asked) != 2 || !v.Tests[0].Executes || v.Tests[1].Executes || v.Tests[1].Skipped || v.Percent != 70 {
+		t.Fatalf("with the public tests passing, the private one is judged: %+v %v", v, err)
 	}
 }

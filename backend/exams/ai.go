@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"regexp"
@@ -24,33 +25,43 @@ import (
 
 // Gemini checks code answers by dry-running them; nothing is compiled.
 // GEMINI_API_KEY and GEMINI_BACKUP_API_KEYS (comma-separated) are the keys, each
-// with its own quota. Checks take turns starting from the next key, so the load
-// spreads over all of them instead of using up the first; a key that fails hands
-// over to the next one at once. A key over its per-minute limit rests for the wait
-// Google suggests, and one over its daily limit for up to 15 minutes. When every
-// key is resting, the ones that wake soonest are still tried before a student is
-// told the checker is busy. GEMINI_MODELS lists models to try in order (the first
-// that answers wins); a model that is overloaded or missing is passed over quickly.
-// GEMINI_CONCURRENCY caps simultaneous calls (by default two per key, 8 to 64),
-// so a busy exam hall queues instead of tripping the API's rate limits.
+// with its own quota. A Run is one request. Checks take turns starting from the
+// next key, so the load spreads over all of them; a key that fails hands over to
+// the next one at once, and after two failures with a model the check moves to
+// the next model rather than spending every key's quota on it. What failed rests:
+// a key over a per-minute limit for the wait Google suggests, one Google had no
+// capacity for ("Resource has been exhausted") for 10 seconds, one over its daily
+// limit for up to 15 minutes. When nothing answers, the check waits for the next
+// key to come free and goes round again, for up to aiRetryFor, before the student
+// is told the checker is busy. GEMINI_MODELS lists models to try in order (the
+// first that answers wins); a model that keeps returning server errors or timing
+// out rests briefly for everyone, and a missing one for 10 minutes.
+// GEMINI_CONCURRENCY caps requests in flight (by default two per key, 8 to 64).
 
 // Free keys get only 20 requests a day on each flash model, which an exam hall
-// uses up within the hour, so the flash-lite models come first: during the exam
-// they answered on every key in 2–5 s. gemini-3.5-flash is the last resort (its
-// keys ran out of quota and its answers slowed to 25 s or more), and
+// uses up within the hour, so the flash-lite models come first, and each key
+// gets only a few of their requests a minute, so there are backups behind them.
+// gemini-3.5-flash is the last resort (its daily quota ran out on every key);
 // gemini-flash-latest and gemini-3.8-flash, which only timed out or returned
-// 503s, are left out.
-var defaultModels = []string{"gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.5-flash"}
+// 503s during the exam, are left out.
+var defaultModels = []string{"gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-3-flash-preview", "gemini-3.5-flash"}
 
 var (
 	errAINotConfigured = errors.New("GEMINI_API_KEY is not set")
 	geminiURL          = "https://generativelanguage.googleapis.com/v1beta/models/"
 	errAIUnavailable   = errors.New("the AI checker is busy or unavailable")
 	aiSlots            = make(chan struct{}, aiConcurrency())
-	// A check normally answers in 2–10 s, slower when a whole exam hall runs code
-	// at once. Past 30 s the model is struggling, and the next one is a better
-	// bet than more waiting.
-	aiHTTP = &http.Client{Timeout: 30 * time.Second}
+	// A check normally answers in 2–10 s. Past 20 s the model is struggling, and
+	// the next one is a better bet than more waiting.
+	aiHTTP = &http.Client{Timeout: 20 * time.Second}
+	// When nothing answers, a check goes round the models again for up to this
+	// long (within the request's own deadline) before the student is told it's
+	// busy: in a busy exam hall the keys come free again within seconds.
+	aiRetryFor = 75 * time.Second
+	// The pause between rounds: one step, then two, then three.
+	retryStep = time.Second
+	// How long a key and model pair rests after Google had no capacity for it.
+	capacityPause = 10 * time.Second
 )
 
 func aiConcurrency() int {
@@ -156,51 +167,26 @@ func thinkingFor(model string) map[string]any {
 }
 
 // checkWithAI asks Gemini how correct the code is and which test cases it passes.
-// Like LeetCode, the public tests come first. The private ones go to Gemini only
-// once every public test passes; otherwise they are marked as not run, and the
-// percent is the one judged against the public tests.
+// Like LeetCode, the private tests count only once every public test passes:
+// until then they're marked as not run, and stay hidden. Public and private
+// tests go to Gemini in one request, so a Run costs a single call.
 func checkWithAI(ctx context.Context, q Question, language, code, sharedContext string) (aiVerdict, error) {
-	var public, private []TestCase
-	for _, t := range q.TestCases {
-		if t.Hidden {
-			private = append(private, t)
-		} else {
-			public = append(public, t)
-		}
-	}
-	if len(public) == 0 || len(private) == 0 {
-		return askGemini(ctx, q, language, code, sharedContext)
-	}
-	first := q
-	first.TestCases = public
-	publicVerdict, err := askGemini(ctx, first, language, code, sharedContext)
+	verdict, err := askGemini(ctx, q, language, code, sharedContext)
 	if err != nil {
 		return aiVerdict{}, err
 	}
-	outcomes := map[string]TestOutcome{}
-	for _, o := range publicVerdict.Tests {
-		outcomes[o.ID] = o
-	}
-	verdict := publicVerdict
-	if allExecute(publicVerdict.Tests) {
-		second := q
-		second.TestCases = private
-		privateVerdict, err := askGemini(ctx, second, language, code, sharedContext)
-		if err != nil {
-			return aiVerdict{}, err
-		}
-		for _, o := range privateVerdict.Tests {
-			outcomes[o.ID] = o
-		}
-		verdict.Percent, verdict.Model = privateVerdict.Percent, privateVerdict.Model
-	} else {
-		for _, t := range private {
-			outcomes[t.ID] = TestOutcome{ID: t.ID, Skipped: true}
+	publicPass := true
+	for i, t := range q.TestCases {
+		if !t.Hidden && !verdict.Tests[i].Executes {
+			publicPass = false
 		}
 	}
-	verdict.Tests = make([]TestOutcome, 0, len(q.TestCases))
-	for _, t := range q.TestCases {
-		verdict.Tests = append(verdict.Tests, outcomes[t.ID])
+	if !publicPass {
+		for i, t := range q.TestCases {
+			if t.Hidden {
+				verdict.Tests[i] = TestOutcome{ID: t.ID, Skipped: true}
+			}
+		}
 	}
 	return verdict, nil
 }
@@ -215,24 +201,20 @@ func allExecute(outcomes []TestOutcome) bool {
 }
 
 // askGemini makes one check of the code against the question's test cases.
-// For each model, best first, it tries every key in turn, starting from the
-// next one in the rotation, and moves to the next key the moment one fails. A
-// key or a key and model pair that recently failed is skipped at first, but if
-// every other one fails too, the resting ones that wake soonest are tried
-// anyway: a student is only told the checker is busy after real attempts.
+// For each model, best first, it tries the keys in turn, starting from the next
+// one in the rotation, and moves to the next key the moment one fails; after two
+// failures with a model it moves to the next model, so a busy hall doesn't spend
+// every key's quota on failed requests. Keys and models that recently failed are
+// skipped. When nothing answers, the check waits for the next key to come free
+// and goes round again while it has time. Only then are the resting pairs that
+// wake soonest tried, and the student told the checker is busy.
 func askGemini(ctx context.Context, q Question, language, code, sharedContext string) (aiVerdict, error) {
 	keys := aiKeys()
 	if len(keys) == 0 {
 		return aiVerdict{}, errAINotConfigured
 	}
-	select {
-	case aiSlots <- struct{}{}:
-		defer func() { <-aiSlots }()
-	case <-ctx.Done():
-		return aiVerdict{}, &aiBusyError{err: ctx.Err()}
-	}
-
 	prompt := checkPrompt(q, language, code, sharedContext)
+	started := time.Now()
 	var lastErr error
 	wait := time.Duration(0) // shortest rest before some key and model accept requests again
 	busy := func() error {
@@ -247,41 +229,74 @@ func askGemini(ctx context.Context, q Question, language, code, sharedContext st
 		until time.Time
 	}
 	var resting []restingPair
-	start := int((keyTurn.Add(1) - 1) % uint64(len(keys)))
-	for _, model := range aiModels() {
-		if until, gone := pausedUntil(modelName(model)); gone {
-			wait = shorterWait(wait, time.Until(until)) // Google says this model doesn't exist
-			continue
-		}
-		serverErrors := 0
-		for turn := range keys {
-			k := (start + turn) % len(keys)
-			if ctx.Err() != nil {
-				return aiVerdict{}, busy()
-			}
-			if _, refused := pausedUntil(keyName(k)); refused {
-				continue // Google refused this key: invalid, expired or not enabled
-			}
-			if until, rest := pausedUntil(pairName(k, model)); rest {
-				resting = append(resting, restingPair{k, model, until})
+	for round := 0; ; round++ {
+		start := int((keyTurn.Add(1) - 1) % uint64(len(keys)))
+		resting = resting[:0]
+		var wakes time.Time // when the first resting key or model comes free
+		noteRest := func(until time.Time) {
+			if time.Until(until) <= suggestedWaitLimit {
 				wait = shorterWait(wait, time.Until(until))
+			}
+			if wakes.IsZero() || until.Before(wakes) {
+				wakes = until
+			}
+		}
+		passing := false // something failed in a way that usually clears within seconds
+		for _, model := range aiModels() {
+			if until, rests := pausedUntil(modelName(model)); rests {
+				noteRest(until) // missing, or failing for everyone just now
 				continue
 			}
-			verdict, err := tryModel(ctx, keys[k], model, prompt)
-			if err == nil {
-				verdict.Model = model
-				return normalizeVerdict(verdict, q), nil
-			}
-			lastErr = err
-			nextModel, rest := restAfter(err, k, model, &serverErrors)
-			wait = shorterWait(wait, rest)
-			log.Printf("ai: %s failed, trying the next key or model: %v", pairName(k, model), err)
-			if nextModel {
-				break
+			troubles := 0
+			for turn := range keys {
+				k := (start + turn) % len(keys)
+				if ctx.Err() != nil {
+					return aiVerdict{}, busy()
+				}
+				if _, refused := pausedUntil(keyName(k)); refused {
+					continue // Google refused this key: invalid, expired or not enabled
+				}
+				if until, rests := pausedUntil(pairName(k, model)); rests {
+					resting = append(resting, restingPair{k, model, until})
+					noteRest(until)
+					continue
+				}
+				verdict, err := tryModel(ctx, keys[k], model, prompt)
+				if err == nil {
+					modelAnswered(model)
+					verdict.Model = model
+					return normalizeVerdict(verdict, q), nil
+				}
+				lastErr = err
+				failed := restAfter(err, k, model, &troubles)
+				wait = shorterWait(wait, failed.rest)
+				passing = passing || failed.passing
+				log.Printf("ai: %s failed, trying the next key or model: %v", pairName(k, model), err)
+				if failed.nextModel {
+					break
+				}
 			}
 		}
+		// Nothing answered. Go round again after a short pause, or once the first
+		// resting key comes free, while there's time.
+		next := retryPause(round)
+		if !passing {
+			if wakes.IsZero() {
+				break // every key or model left is refused, missing or out of quota
+			}
+			next = max(next, time.Until(wakes))
+		}
+		if next > retryTimeLeft(ctx, started) {
+			break
+		}
+		select {
+		case <-time.After(next):
+		case <-ctx.Done():
+			return aiVerdict{}, busy()
+		}
 	}
-	// Everything else failed: try the resting pairs that wake soonest before giving up.
+	// Out of time, or only long rests left: try the resting pairs that wake
+	// soonest before giving up.
 	sort.Slice(resting, func(i, j int) bool { return resting[i].until.Before(resting[j].until) })
 	for i, pair := range resting {
 		if i == lastResortTries || ctx.Err() != nil {
@@ -289,13 +304,13 @@ func askGemini(ctx context.Context, q Question, language, code, sharedContext st
 		}
 		verdict, err := tryModel(ctx, keys[pair.k], pair.model, prompt)
 		if err == nil {
+			modelAnswered(pair.model)
 			verdict.Model = pair.model
 			return normalizeVerdict(verdict, q), nil
 		}
 		lastErr = err
 		var none int
-		_, rest := restAfter(err, pair.k, pair.model, &none)
-		wait = shorterWait(wait, rest)
+		wait = shorterWait(wait, restAfter(err, pair.k, pair.model, &none).rest)
 		log.Printf("ai: %s failed again: %v", pairName(pair.k, pair.model), err)
 	}
 	return aiVerdict{}, busy()
@@ -305,39 +320,77 @@ func askGemini(ctx context.Context, q Question, language, code, sharedContext st
 // nothing else answered.
 const lastResortTries = 6
 
-// restAfter rests what failed, so the next checks skip it for a while: only the
-// key and model pair, except a refused key (all its models) or a model Google
-// doesn't have (every key). nextModel says this check should move to the next
-// model; rest is the wait to suggest to the student, if any.
-func restAfter(err error, k int, model string, serverErrors *int) (nextModel bool, rest time.Duration) {
+const (
+	// A check goes round again only with a round's worth of time left before the
+	// request's deadline.
+	roundTime = 10 * time.Second
+	// Students are told to try again in a while only if it's this short.
+	suggestedWaitLimit = 2 * time.Minute
+)
+
+// retryTimeLeft is how long a check may still wait before going round again.
+func retryTimeLeft(ctx context.Context, started time.Time) time.Duration {
+	left := aiRetryFor - time.Since(started)
+	if deadline, ok := ctx.Deadline(); ok {
+		left = min(left, time.Until(deadline)-roundTime)
+	}
+	return left
+}
+
+// retryPause is the wait before another round: one step, then two, then three,
+// with a little jitter so a whole hall doesn't go round at the same moment.
+func retryPause(round int) time.Duration {
+	return time.Duration(min(round+1, 3))*retryStep + rand.N(retryStep/2+1)
+}
+
+// aiFailure says what a failed request means for the rest of the check.
+type aiFailure struct {
+	nextModel bool          // move on to the next model
+	rest      time.Duration // a wait to suggest to the student, if any
+	passing   bool          // usually clears within seconds, so another round is worth it
+}
+
+// restAfter rests what failed, so the next checks skip it for a while: the key
+// and model pair, a whole key Google refused, or a model Google doesn't have or
+// that keeps failing for everyone. troubles counts this check's failures with
+// the model; after two, the check moves on to the next model.
+func restAfter(err error, k int, model string, troubles *int) aiFailure {
 	var refused *keyError
 	var limited *rateLimitError
 	var slow *slowModelError
 	var rejected *modelError
 	switch {
+	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
+		return aiFailure{} // the check ran out of time; nothing is wrong with the key
 	case errors.As(err, &refused):
 		pause(keyName(k), refusedKeyPause)
-	case errors.As(err, &limited):
+		return aiFailure{}
+	case errors.As(err, &limited) && limited.daily:
 		pause(pairName(k, model), limited.wait)
-		if !limited.daily {
-			rest = limited.wait
-		}
+		return aiFailure{}
+	case errors.As(err, &limited):
+		// Over a per-minute limit, or Google had no capacity for this key: the pair
+		// rests a little, and other keys (or the next model) take the check.
+		pause(pairName(k, model), limited.wait)
+		*troubles++
+		return aiFailure{nextModel: *troubles >= 2, rest: limited.wait, passing: true}
 	case errors.As(err, &slow):
 		// Slow for this key right now; other keys may still get quick answers,
 		// but this check has waited long enough and tries the next model.
 		pause(pairName(k, model), slowModelPause)
-		nextModel = true
+		modelStruggled(model)
+		return aiFailure{nextModel: true, passing: true}
 	case errors.As(err, &rejected):
 		if rejected.status == http.StatusNotFound {
 			pause(modelName(model), missingModelPause)
 		}
-		nextModel = true
+		return aiFailure{nextModel: true}
 	default:
 		// A server error: one is a hiccup, a second on another key means the model is struggling.
-		*serverErrors++
-		nextModel = *serverErrors >= 2
+		*troubles++
+		modelStruggled(model)
+		return aiFailure{nextModel: *troubles >= 2, passing: true}
 	}
-	return nextModel, rest
 }
 
 // tryModel asks one model with one key, trying once more after a hiccup.
@@ -381,7 +434,7 @@ func (e *aiBusyError) Unwrap() error { return errAIUnavailable }
 
 type rateLimitError struct {
 	wait  time.Duration
-	daily bool // over the daily limit: wait is until the reset
+	daily bool // over the daily limit: wait is until the reset (or dailyQuotaRest)
 	body  string
 }
 
@@ -390,6 +443,32 @@ func (e *rateLimitError) Error() string { return "rate limited: " + e.body }
 // A model that doesn't answer within aiHTTP's timeout is usually overloaded, so
 // it rests briefly instead of being asked again straight away.
 const slowModelPause = 20 * time.Second
+
+// A model that returns server errors or times out six times in a row, across
+// all checks, is overloaded at Google: it rests briefly for everyone, so checks
+// stop spending time on it. Any answer from it resets the count.
+const (
+	overloadedAfter      = 6
+	overloadedModelPause = 10 * time.Second
+)
+
+var modelStruggles sync.Map // model name → *atomic.Int32, failures in a row
+
+func modelStruggled(model string) {
+	v, _ := modelStruggles.LoadOrStore(model, new(atomic.Int32))
+	count := v.(*atomic.Int32)
+	if count.Add(1) >= overloadedAfter {
+		count.Store(0)
+		pause(modelName(model), overloadedModelPause)
+		log.Printf("ai: %s keeps failing, resting it for %s", model, overloadedModelPause)
+	}
+}
+
+func modelAnswered(model string) {
+	if v, ok := modelStruggles.Load(model); ok {
+		v.(*atomic.Int32).Store(0)
+	}
+}
 
 // A model Google says doesn't exist (a name in GEMINI_MODELS it has retired, say)
 // rests long enough not to cost every check a request.
@@ -511,6 +590,13 @@ func retryDelay(body string) time.Duration {
 
 // callGemini makes one request. retry says whether the same model is worth trying again.
 func callGemini(ctx context.Context, key, model, prompt string, thinking map[string]any) (aiVerdict, bool, error) {
+	// A slot per request in flight, so a check waiting between rounds holds none.
+	select {
+	case aiSlots <- struct{}{}:
+		defer func() { <-aiSlots }()
+	case <-ctx.Done():
+		return aiVerdict{}, false, ctx.Err()
+	}
 	generation := map[string]any{"temperature": 0, "responseMimeType": "application/json", "responseSchema": verdictSchema}
 	if thinking != nil {
 		generation["thinkingConfig"] = thinking
@@ -538,10 +624,21 @@ func callGemini(ctx context.Context, key, model, prompt string, thinking map[str
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode == http.StatusTooManyRequests {
-		if dailyQuota(string(raw)) {
+		reply := string(raw)
+		switch {
+		case dailyQuota(reply):
 			return aiVerdict{}, false, &rateLimitError{wait: min(untilQuotaReset(time.Now()), dailyQuotaRest), daily: true, body: model}
+		case strings.Contains(reply, "PerMinute"):
+			return aiVerdict{}, false, &rateLimitError{wait: retryDelay(reply), body: model}
+		default:
+			// No quota named ("Resource has been exhausted"): Google has no capacity
+			// for this key and model just now. It comes back within seconds.
+			wait := capacityPause
+			if suggested := retryDelay(reply); suggested > 0 {
+				wait = min(wait, suggested)
+			}
+			return aiVerdict{}, false, &rateLimitError{wait: wait, body: model + ": no capacity just now"}
 		}
-		return aiVerdict{}, false, &rateLimitError{wait: retryDelay(string(raw)), body: model}
 	}
 	if resp.StatusCode != http.StatusOK {
 		message := strings.Join(strings.Fields(string(raw)), " ") // one line in the log

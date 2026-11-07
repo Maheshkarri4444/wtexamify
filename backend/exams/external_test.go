@@ -278,11 +278,16 @@ func fakeGemini(t *testing.T, reply func(key, model string) (int, string)) *[]st
 	previous := geminiURL
 	geminiURL = server.URL + "/"
 	t.Cleanup(func() { geminiURL = previous })
-	pauses.Range(func(k, _ any) bool {
-		pauses.Delete(k)
-		return true
-	})
+	for _, rests := range []*sync.Map{&pauses, &modelStruggles} {
+		rests.Range(func(k, _ any) bool {
+			rests.Delete(k)
+			return true
+		})
+	}
 	keyTurn.Store(0) // each test's first check starts from the first key
+	previousRetry := aiRetryFor
+	aiRetryFor = 0 // one round and the last resort, unless a test is about going round again
+	t.Cleanup(func() { aiRetryFor = previousRetry })
 	return &asked
 }
 
@@ -317,8 +322,8 @@ func TestRefusedKeyHandsOverToTheBackup(t *testing.T) {
 	if err != nil || verdict.Percent != 90 || verdict.Model != "model-a" {
 		t.Fatalf("the backup key should answer with the best model: %+v %v", verdict, err)
 	}
-	// Public tests first, then (they passed) the private one, both on the fresh key.
-	if got := strings.Join(*asked, " "); got != "expired/model-a fresh/model-a fresh/model-a" {
+	// One request for the public and private tests, on the fresh key.
+	if got := strings.Join(*asked, " "); got != "expired/model-a fresh/model-a" {
 		t.Fatalf("asked %s", got)
 	}
 	if _, resting := pausedUntil(keyName(0)); !resting {
@@ -328,7 +333,7 @@ func TestRefusedKeyHandsOverToTheBackup(t *testing.T) {
 	if _, err := checkWithAI(t.Context(), codeQuestion(), "sql", "select 1", ""); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(*asked, " "); got != "fresh/model-a fresh/model-a" {
+	if got := strings.Join(*asked, " "); got != "fresh/model-a" {
 		t.Fatalf("a resting key isn't asked again, but asked %s", got)
 	}
 }
@@ -347,7 +352,7 @@ func TestKeyOverQuotaTriesTheBackupBeforeAWeakerModel(t *testing.T) {
 	if err != nil || verdict.Model != "model-a" || verdict.Percent != 75 {
 		t.Fatalf("the spare key should answer on the best model: %+v %v", verdict, err)
 	}
-	if got := strings.Join(*asked, " "); got != "busy/model-a spare/model-a spare/model-a" {
+	if got := strings.Join(*asked, " "); got != "busy/model-a spare/model-a" {
 		t.Fatalf("asked %s", got)
 	}
 	if _, resting := pausedUntil(pairName(0, "model-a")); !resting {
