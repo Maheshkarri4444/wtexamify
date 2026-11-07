@@ -45,9 +45,14 @@ func isTeacherEmail(email string) bool {
 	return false
 }
 
-// isStudentEmail accepts RGUKT addresses, plus any TEST_STUDENT_EMAILS used to try the student side.
+// isStudentEmail accepts RGUKT addresses, students listed in config's
+// studentRollNumbers (who lost their RGUKT email), plus any TEST_STUDENT_EMAILS
+// used to try the student side.
 func isStudentEmail(email string) bool {
 	if strings.HasSuffix(email, "@rguktn.ac.in") {
+		return true
+	}
+	if _, listed := config.StudentRoll(email); listed {
 		return true
 	}
 	for _, testEmail := range config.List("TEST_STUDENT_EMAILS") {

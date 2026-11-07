@@ -502,3 +502,22 @@ func TestOldAICheckOfAMatchingAnswerIsRedone(t *testing.T) {
 		t.Fatal("the AI's check of a different answer stands")
 	}
 }
+
+func TestRollNumberForAStudentWithAnotherEmail(t *testing.T) {
+	cases := map[string]string{
+		"n210368@rguktn.ac.in":            "N210368",
+		"Keerthanadarapaneni24@gmail.com": "N230758", // her RGUKT email was lost
+		"teacher@examify.test":            "teacher",
+	}
+	for email, want := range cases {
+		if got := rollNumber(email); got != want {
+			t.Errorf("rollNumber(%q) = %q, want %q", email, got, want)
+		}
+	}
+}
+
+func TestExternalsAllowTenChecksPerQuestion(t *testing.T) {
+	if got := defaultSettings(TypeExternal).MaxRuns; got != 10 {
+		t.Fatalf("a new external allows %d checks per question, want 10", got)
+	}
+}

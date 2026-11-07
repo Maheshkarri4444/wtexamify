@@ -117,7 +117,16 @@ export const SUBMIT_REASONS = {
 
 export const letter = (index) => String.fromCharCode(65 + index);
 
+// Students who sign in with an email that isn't their RGUKT one (it was lost, say),
+// with the roll number to show for them. The backend has the same list in
+// config.go/students.go, so change both together.
+const ROLL_NUMBERS = {
+  "keerthanadarapaneni24@gmail.com": "N230758",
+};
+
 export function rollFromEmail(email = "") {
+  const listed = ROLL_NUMBERS[String(email).trim().toLowerCase()];
+  if (listed) return listed;
   const local = email.split("@")[0] || "";
   return /^[a-z]\d{6}$/i.test(local) ? local.toUpperCase() : local;
 }

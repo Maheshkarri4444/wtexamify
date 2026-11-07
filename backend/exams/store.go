@@ -299,7 +299,12 @@ func countAnswered(answers map[string]Answer) int {
 	return n
 }
 
+// rollNumber is the roll number shown for a student: the name part of an RGUKT
+// email, or the one config lists for a student signing in with another email.
 func rollNumber(email string) string {
+	if roll, listed := config.StudentRoll(email); listed {
+		return roll
+	}
 	local, _, _ := strings.Cut(email, "@")
 	if rollNumberRe.MatchString(local) {
 		return strings.ToUpper(local)

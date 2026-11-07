@@ -309,7 +309,7 @@ func defaultSettings(examType string) Settings {
 		settings.AllowLeaving = true
 		settings.AllowClipboard = true
 	case TypeExternal:
-		settings.MaxRuns = 20
+		settings.MaxRuns = 10 // AI checks per question
 	}
 	return settings
 }
