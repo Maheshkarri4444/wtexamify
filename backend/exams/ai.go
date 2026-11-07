@@ -34,19 +34,23 @@ import (
 // GEMINI_CONCURRENCY caps simultaneous calls (by default two per key, 8 to 64),
 // so a busy exam hall queues instead of tripping the API's rate limits.
 
-// The lite model comes second: when the main model is over its quota, it has
-// kept answering quickly while the other flash models stalled.
-var defaultModels = []string{"gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-3.8-flash"}
+// Free keys get only 20 requests a day on each flash model, which an exam hall
+// uses up within the hour, so the flash-lite models come first: during the exam
+// they answered on every key in 2–5 s. gemini-3.5-flash is the last resort (its
+// keys ran out of quota and its answers slowed to 25 s or more), and
+// gemini-flash-latest and gemini-3.8-flash, which only timed out or returned
+// 503s, are left out.
+var defaultModels = []string{"gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.5-flash"}
 
 var (
 	errAINotConfigured = errors.New("GEMINI_API_KEY is not set")
 	geminiURL          = "https://generativelanguage.googleapis.com/v1beta/models/"
 	errAIUnavailable   = errors.New("the AI checker is busy or unavailable")
 	aiSlots            = make(chan struct{}, aiConcurrency())
-	// A check normally answers in 3–10 s, slower when a whole exam hall runs code
-	// at once. Past 40 s the model is struggling, and the next one is a better
+	// A check normally answers in 2–10 s, slower when a whole exam hall runs code
+	// at once. Past 30 s the model is struggling, and the next one is a better
 	// bet than more waiting.
-	aiHTTP = &http.Client{Timeout: 40 * time.Second}
+	aiHTTP = &http.Client{Timeout: 30 * time.Second}
 )
 
 func aiConcurrency() int {
