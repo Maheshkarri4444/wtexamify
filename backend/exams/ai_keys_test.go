@@ -100,7 +100,7 @@ func TestQuotaResetsAtMidnightPacific(t *testing.T) {
 	}
 }
 
-func TestOverloadedModelGivesWayAfterTwoKeys(t *testing.T) {
+func TestOverloadedModelGivesWayToTheNextModel(t *testing.T) {
 	t.Setenv("GEMINI_API_KEY", "k1")
 	t.Setenv("GEMINI_BACKUP_API_KEYS", "k2,k3,k4,k5")
 	t.Setenv("GEMINI_MODELS", "model-a,model-b")
@@ -114,8 +114,8 @@ func TestOverloadedModelGivesWayAfterTwoKeys(t *testing.T) {
 	if err != nil || v.Model != "model-b" {
 		t.Fatalf("the next model should answer: %+v %v", v, err)
 	}
-	// Two keys, once each, then the next model: not all five keys, and no key asked twice.
-	if got := strings.Join(*asked, " "); got != "k1/model-a k2/model-a k1/model-b" {
+	// A server error is the model's trouble, not the key's: the same key tries the next model.
+	if got := strings.Join(*asked, " "); got != "k1/model-a k1/model-b" {
 		t.Fatalf("asked %s", got)
 	}
 }
@@ -239,8 +239,9 @@ func TestTwoRefusalsMoveTheCheckToTheNextModel(t *testing.T) {
 	if err != nil || v.Model != "model-b" {
 		t.Fatalf("the next model should answer: %+v %v", v, err)
 	}
-	// Not all five keys: each failed request uses up quota other students need.
-	if got := strings.Join(*asked, " "); got != "k1/model-a k2/model-a k1/model-b" {
+	// A refusal moves the check to a key nobody holds; after two, the model is left
+	// for the round. Not all five keys: each failed request uses up quota other students need.
+	if got := strings.Join(*asked, " "); got != "k1/model-a k2/model-a k3/model-b" {
 		t.Fatalf("asked %s", got)
 	}
 }

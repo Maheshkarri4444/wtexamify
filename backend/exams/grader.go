@@ -76,6 +76,10 @@ func gradeWithAI(id primitive.ObjectID) {
 		return
 	}
 
+	// The student's key was freed when they submitted; grading borrows one of its own.
+	ctx = withAIOwner(ctx, gradingOwner(id), "grading "+rollNumber(att.StudentEmail))
+	defer releaseAIKey(gradingOwner(id))
+
 	byID := questionMap(exam)
 	if att.Runs == nil {
 		att.Runs = map[string]RunResult{}

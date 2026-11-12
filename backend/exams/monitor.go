@@ -422,7 +422,10 @@ func attemptDetail(c *gin.Context) {
 	if att.Events == nil {
 		att.Events = []Event{}
 	}
-	c.JSON(http.StatusOK, gin.H{"student": row, "events": att.Events, "items": items, "user_agent": att.UserAgent, "grading": att.Grading})
+	c.JSON(http.StatusOK, gin.H{
+		"student": row, "events": att.Events, "items": items, "user_agent": att.UserAgent, "grading": att.Grading,
+		"set_context": setContext(exam, att.SetNumber), // the tables of the student's set, for papers whose sets each have their own database
+	})
 }
 
 // setMarks lets the teacher replace the automatic marks for one answer (or
@@ -501,8 +504,9 @@ func answerSheets(c *gin.Context) {
 	sheets := make([]gin.H, 0, len(attempts))
 	for _, att := range attempts {
 		sheets = append(sheets, gin.H{
-			"student": rowFor(att.StudentEmail, att.StudentName, att.SetNumber, true, att, now),
-			"items":   sheetItems(exam, att),
+			"student":     rowFor(att.StudentEmail, att.StudentName, att.SetNumber, true, att, now),
+			"items":       sheetItems(exam, att),
+			"set_context": setContext(exam, att.SetNumber),
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"exam": gin.H{"title": exam.Title, "type": exam.Type, "duration_minutes": exam.DurationMinutes}, "sheets": sheets})

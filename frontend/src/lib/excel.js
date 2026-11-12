@@ -75,30 +75,50 @@ const EXTERNAL_HELP = [
   ["schema (optional)", "Tables and rows this question uses. Students see them above the question, and the AI checks against them."],
 ];
 
-// Your own sets: a set column, and each question's tables and rows.
-const SETS_COLUMNS = ["set", "question", "language", "answer", "starter_code", "marks", "difficulty", "schema", "public_1_input", "public_1_output", "public_2_input", "public_2_output", "private_1_input", "private_1_output"];
-const SETS_SCHEMA = "CREATE TABLE Student (sid NUMBER PRIMARY KEY, sname VARCHAR(20), marks NUMBER);\n\nTable: Student\nSID | SNAME | MARKS\n1 | Ravi | 88\n2 | Sita | 95\n3 | Kiran | 67";
+// Your own sets: a set column, and each set's database, given once on a Sets
+// sheet. Two sets of six SQL queries on their own tables, as in the DBMS lab exams.
+const SETS_COLUMNS = ["set", "question", "language", "answer", "starter_code", "marks", "difficulty", "schema", "public_1_input", "public_1_output", "private_1_input", "private_1_output"];
 const SETS_SAMPLES = [
-  [1, "I. Implement a PL/SQL program to find the factorial of a given number.", "plsql", "DECLARE\n  n NUMBER := &n;\n  f NUMBER := 1;\nBEGIN\n  FOR i IN 1 .. n LOOP\n    f := f * i;\n  END LOOP;\n  DBMS_OUTPUT.PUT_LINE('Factorial of ' || n || ' is ' || f);\nEND;\n/", "", 10, "easy", "", "n = 5", "Factorial of 5 is 120", "n = 0", "Factorial of 0 is 1", "n = 7", "Factorial of 7 is 5040"],
-  [1, "II. Student (sid, sname, marks)\nWrite the SQL for each query under its letter.\na. Find the student with the highest marks.\nb. List the students who scored more than 80, in order of marks.", "sql", "-- a\nSELECT sname FROM Student WHERE marks = (SELECT MAX(marks) FROM Student);\n-- b\nSELECT sname, marks FROM Student WHERE marks > 80 ORDER BY marks;", "-- a.\n\n-- b.\n", 20, "medium", SETS_SCHEMA, "a. Find the student with the highest marks.", "SNAME\nSita", "b. List the students who scored more than 80, in order of marks.", "SNAME | MARKS\nRavi | 88\nSita | 95", "", ""],
-  [2, "I. Implement a PL/SQL program to check whether a number is even or odd.", "plsql", "DECLARE\n  n NUMBER := &n;\nBEGIN\n  IF MOD(n, 2) = 0 THEN\n    DBMS_OUTPUT.PUT_LINE(n || ' is even');\n  ELSE\n    DBMS_OUTPUT.PUT_LINE(n || ' is odd');\n  END IF;\nEND;\n/", "", 10, "easy", "", "n = 4", "4 is even", "n = 7", "7 is odd", "n = 0", "0 is even"],
-  [2, "II. Student (sid, sname, marks)\nWrite the SQL for each query under its letter.\na. Count the students.\nb. Find the average marks.", "sql", "-- a\nSELECT COUNT(*) FROM Student;\n-- b\nSELECT AVG(marks) FROM Student;", "-- a.\n\n-- b.\n", 20, "medium", SETS_SCHEMA, "a. Count the students.", "COUNT\n3", "b. Find the average marks.", "AVG_MARKS\n83.33", "", ""],
+  [1, "1. List the titles of books that cost more than 400, the costliest first.", "sql", "SELECT Title\nFROM Books\nWHERE Price > 400\nORDER BY Price DESC;", "", 5, "easy", "", "", "TITLE\nDatabase Systems\nOperating Systems\nSignals and Systems", "The same tables after these changes:\nINSERT INTO Books VALUES (7, 'Computer Networks', 'Forouzan', 'CSE', 720);", "TITLE\nComputer Networks\nDatabase Systems\nOperating Systems\nSignals and Systems"],
+  [1, "2. Show each category with the number of books in it, in alphabetical order of category.", "sql", "SELECT Category, COUNT(*) AS Books\nFROM Books\nGROUP BY Category\nORDER BY Category;", "", 5, "easy", "", "", "CATEGORY | BOOKS\nCSE | 3\nECE | 2\nMECH | 1", "The same tables after these changes:\nINSERT INTO Books VALUES (7, 'Computer Networks', 'Forouzan', 'CSE', 720);\nINSERT INTO Books VALUES (8, 'Thermodynamics', 'Nag', 'MECH', 410);", "CATEGORY | BOOKS\nCSE | 4\nECE | 2\nMECH | 2"],
+  [1, "3. Find the names of members who have borrowed at least one book, in alphabetical order.", "sql", "SELECT DISTINCT m.Name\nFROM Members m\nJOIN Issues i ON i.Member_id = m.Member_id\nORDER BY m.Name;", "", 5, "medium", "", "", "NAME\nKiran\nRavi\nSita", "The same tables after these changes:\nINSERT INTO Issues VALUES (6, 4, 104, '2026-10-09');", "NAME\nKiran\nMeena\nRavi\nSita"],
+  [1, "4. Find the title of the most expensive book.", "sql", "SELECT Title\nFROM Books\nWHERE Price = (SELECT MAX(Price) FROM Books);", "", 5, "medium", "", "", "TITLE\nDatabase Systems", "The same tables after these changes:\nINSERT INTO Books VALUES (7, 'Computer Networks', 'Forouzan', 'CSE', 720);", "TITLE\nComputer Networks"],
+  [1, "5. For every member who lives in Vijayawada, show their name and how many books they have borrowed, in alphabetical order of name.", "sql", "SELECT m.Name, COUNT(i.Issue_id) AS Borrowed\nFROM Members m\nLEFT JOIN Issues i ON i.Member_id = m.Member_id\nWHERE m.City = 'Vijayawada'\nGROUP BY m.Member_id, m.Name\nORDER BY m.Name;", "", 5, "hard", "", "", "NAME | BORROWED\nKiran | 2\nRavi | 2", "The same tables after these changes:\nINSERT INTO Members VALUES (105, 'Anil', 'Vijayawada');", "NAME | BORROWED\nAnil | 0\nKiran | 2\nRavi | 2"],
+  [1, "6. List the titles of books that have never been borrowed, in alphabetical order.", "sql", "SELECT Title\nFROM Books\nWHERE Book_id NOT IN (SELECT Book_id FROM Issues)\nORDER BY Title;", "", 5, "hard", "", "", "TITLE\nDigital Electronics\nEngineering Drawing", "The same tables after these changes:\nINSERT INTO Issues VALUES (6, 4, 104, '2026-10-09');", "TITLE\nDigital Electronics"],
+  [2, "1. List the names and salaries of employees who earn more than 50000, the highest salary first.", "sql", "SELECT Ename, Salary\nFROM Emp\nWHERE Salary > 50000\nORDER BY Salary DESC;", "", 5, "easy", "", "", "ENAME | SALARY\nArjun | 82000\nBhavya | 61000\nGopi | 58000", "The same tables after these changes:\nUPDATE Emp SET Salary = 52000 WHERE Eno = 6;", "ENAME | SALARY\nArjun | 82000\nBhavya | 61000\nGopi | 58000\nFarah | 52000"],
+  [2, "2. Show each department's name with its total salary bill, in alphabetical order of department name. Leave out departments with no employees.", "sql", "SELECT d.Dname, SUM(e.Salary) AS Total_Salary\nFROM Dept d\nJOIN Emp e ON e.Dno = d.Dno\nGROUP BY d.Dno, d.Dname\nORDER BY d.Dname;", "", 5, "easy", "", "", "DNAME | TOTAL_SALARY\nAccounts | 47000\nResearch | 201000\nSales | 96000", "The same tables after these changes:\nINSERT INTO Emp VALUES (8, 'Harsha', 'Clerk', 30000, 30);", "DNAME | TOTAL_SALARY\nAccounts | 77000\nResearch | 201000\nSales | 96000"],
+  [2, "3. Find the names of the employees who work in Hyderabad, in alphabetical order.", "sql", "SELECT e.Ename\nFROM Emp e\nJOIN Dept d ON d.Dno = e.Dno\nWHERE d.Location = 'Hyderabad'\nORDER BY e.Ename;", "", 5, "medium", "", "", "ENAME\nArjun\nBhavya\nFarah\nGopi", "The same tables after these changes:\nUPDATE Dept SET Location = 'Pune' WHERE Dno = 30;", "ENAME\nArjun\nBhavya\nGopi"],
+  [2, "4. Find the names of the departments that have more than two employees, in alphabetical order.", "sql", "SELECT d.Dname\nFROM Dept d\nJOIN Emp e ON e.Dno = d.Dno\nGROUP BY d.Dno, d.Dname\nHAVING COUNT(*) > 2\nORDER BY d.Dname;", "", 5, "medium", "", "", "DNAME\nResearch\nSales", "The same tables after these changes:\nDELETE FROM Emp WHERE Eno = 5;", "DNAME\nResearch"],
+  [2, "5. Find the second highest salary in the company, without using LIMIT or TOP.", "sql", "SELECT MAX(Salary) AS Second_Highest\nFROM Emp\nWHERE Salary < (SELECT MAX(Salary) FROM Emp);", "", 5, "hard", "", "", "SECOND_HIGHEST\n61000", "The same tables after these changes:\nINSERT INTO Emp VALUES (8, 'Harsha', 'Manager', 90000, 20);", "SECOND_HIGHEST\n82000"],
+  [2, "6. List the employees who earn more than the average salary of their own department, in alphabetical order.", "sql", "SELECT e.Ename\nFROM Emp e\nWHERE e.Salary > (SELECT AVG(x.Salary) FROM Emp x WHERE x.Dno = e.Dno)\nORDER BY e.Ename;", "", 5, "hard", "", "", "ENAME\nArjun\nDivya\nEshwar", "The same tables after these changes:\nINSERT INTO Emp VALUES (8, 'Harsha', 'Clerk', 30000, 30);", "ENAME\nArjun\nDivya\nEshwar\nFarah"],
+];
+const SETS_SHEET = [
+  ["set", "schema"],
+  [1, "CREATE TABLE Books (\n  Book_id  NUMBER PRIMARY KEY,\n  Title    VARCHAR(40),\n  Author   VARCHAR(30),\n  Category VARCHAR(20),\n  Price    NUMBER\n);\nCREATE TABLE Members (\n  Member_id NUMBER PRIMARY KEY,\n  Name      VARCHAR(30),\n  City      VARCHAR(20)\n);\nCREATE TABLE Issues (\n  Issue_id   NUMBER PRIMARY KEY,\n  Book_id    NUMBER REFERENCES Books(Book_id),\n  Member_id  NUMBER REFERENCES Members(Member_id),\n  Issue_date DATE\n);\n\nTable: Books\nBOOK_ID | TITLE | AUTHOR | CATEGORY | PRICE\n1 | Database Systems | Navathe | CSE | 650\n2 | Operating Systems | Galvin | CSE | 540\n3 | Signals and Systems | Oppenheim | ECE | 480\n4 | Engineering Drawing | Bhatt | MECH | 320\n5 | Data Structures | Tanenbaum | CSE | 390\n6 | Digital Electronics | Morris Mano | ECE | 275\n\nTable: Members\nMEMBER_ID | NAME | CITY\n101 | Ravi | Vijayawada\n102 | Sita | Guntur\n103 | Kiran | Vijayawada\n104 | Meena | Nuzvid\n\nTable: Issues\nISSUE_ID | BOOK_ID | MEMBER_ID | ISSUE_DATE\n1 | 1 | 101 | 2026-10-01\n2 | 2 | 101 | 2026-10-03\n3 | 3 | 102 | 2026-10-04\n4 | 1 | 103 | 2026-10-05\n5 | 5 | 103 | 2026-10-07"],
+  [2, "CREATE TABLE Dept (\n  Dno      NUMBER PRIMARY KEY,\n  Dname    VARCHAR(20),\n  Location VARCHAR(20)\n);\nCREATE TABLE Emp (\n  Eno    NUMBER PRIMARY KEY,\n  Ename  VARCHAR(30),\n  Job    VARCHAR(20),\n  Salary NUMBER,\n  Dno    NUMBER REFERENCES Dept(Dno)\n);\n\nTable: Dept\nDNO | DNAME | LOCATION\n10 | Research | Hyderabad\n20 | Sales | Chennai\n30 | Accounts | Hyderabad\n40 | Support | Pune\n\nTable: Emp\nENO | ENAME | JOB | SALARY | DNO\n1 | Arjun | Manager | 82000 | 10\n2 | Bhavya | Analyst | 61000 | 10\n3 | Charan | Clerk | 28000 | 20\n4 | Divya | Salesman | 35000 | 20\n5 | Eshwar | Salesman | 33000 | 20\n6 | Farah | Accountant | 47000 | 30\n7 | Gopi | Analyst | 58000 | 10"],
 ];
 const SETS_HELP = [
   ...EXTERNAL_HELP,
   ["", ""],
-  ["Your own sets", "Each set number is one paper, in the order of its rows. Students are dealt the sets in turn, by email order, so neighbours get different sets. Questions can repeat across sets."],
+  ["Your own sets", "Each set number is one paper, in the order of its rows. Students are dealt the sets in turn, by email order, so neighbours get different sets. This template has two sets of six SQL queries, 5 marks each."],
+  ["Sets sheet", "One row per set: the set number and its database (CREATE TABLE statements, then each table as a title line “Table: Books” followed by rows of values separated by |). Students see it above every question of their set, and the AI checks against it. When every question in a set uses the same tables, give them here once and leave the schema column empty."],
   ["Tables in schema and outputs", "Separate blocks with a blank line. A block with a title line (Table: Student) and rows of values separated by | is shown to students as a table; anything else, like CREATE TABLE, is shown as code. Expected outputs work the same way: a heading row, then one row per line."],
-  ["Sets sheet (optional)", "A sheet named Sets with the columns set and schema gives a whole set its tables, for when every question in the set uses them."],
+  ["Private tests for queries", "The input is the changes to the rows (“The same tables after these changes:” and INSERT, UPDATE or DELETE statements), the output the query's result after them. They're checked once the public test passes, and catch queries that only fit the rows shown."],
+  ["Parts (optional)", "A question that starts with a part number (I., II (a)., II (b). …) is shown with that name, and teachers see II (a) to II (e) grouped under II with a subtotal. Questions numbered 1., 2. … need nothing special."],
 ];
 
-function writeTemplate(columns, rows, help, widths, fileName) {
+function writeTemplate(columns, rows, help, widths, fileName, extraSheets = []) {
   const sheet = XLSX.utils.aoa_to_sheet([columns, ...rows]);
   sheet["!cols"] = widths.map((wch) => ({ wch }));
   const helpSheet = XLSX.utils.aoa_to_sheet(help);
   helpSheet["!cols"] = [{ wch: 26 }, { wch: 120 }];
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, "Questions");
+  for (const extra of extraSheets) {
+    const extraSheet = XLSX.utils.aoa_to_sheet(extra.rows);
+    if (extra.widths) extraSheet["!cols"] = extra.widths.map((wch) => ({ wch }));
+    XLSX.utils.book_append_sheet(book, extraSheet, extra.name);
+  }
   XLSX.utils.book_append_sheet(book, helpSheet, "How to fill it");
   XLSX.writeFile(book, fileName);
 }
@@ -109,7 +129,9 @@ export function downloadQuestionTemplate(kind = "mixed", examType = "viva") {
     return;
   }
   if (examType === "external" && kind === "external_sets") {
-    writeTemplate(SETS_COLUMNS, SETS_SAMPLES, SETS_HELP, [5, 60, 9, 60, 18, 7, 10, 50, 30, 24, 30, 24, 24, 24], "examify-external-own-sets-template.xlsx");
+    writeTemplate(SETS_COLUMNS, SETS_SAMPLES, SETS_HELP, [5, 60, 9, 60, 14, 7, 10, 12, 18, 30, 50, 30], "examify-external-own-sets-template.xlsx", [
+      { name: "Sets", rows: SETS_SHEET, widths: [5, 100] },
+    ]);
     return;
   }
   if (examType === "external") {

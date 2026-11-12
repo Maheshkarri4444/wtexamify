@@ -284,6 +284,11 @@ func finalizeAttempts(ctx context.Context, e *Exam, attempts []*Attempt, reason 
 	if _, err := attemptsCol().BulkWrite(ctx, models, options.BulkWrite().SetOrdered(false)); err != nil {
 		return err
 	}
+	if e.Type == TypeExternal {
+		for _, att := range attempts {
+			releaseAIKey(attemptOwner(att.ID)) // the key goes back to the pool for the next student
+		}
+	}
 	queueGrading(needsAI...)
 	return nil
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, KeyRound, Maximize, MonitorUp, MousePointerClick, RefreshCw, Send, ShieldAlert, Unlock } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
+import { Spinner } from "../../../components/ui/Feedback";
 import { Modal } from "../../../components/ui/Overlay";
 import { cn } from "../../../lib/cn";
 import { useNow } from "../../../lib/hooks";
@@ -75,6 +76,12 @@ export function LockOverlay({ state, onUnlock, onRefresh, demoCodes }) {
         </div>
       )}
       <p className="mt-5 text-sm leading-relaxed text-ink-2">Raise your hand. Your teacher will type the code here, or unlock you from their dashboard.</p>
+      {!demoCodes && (
+        <p className="mt-2 flex items-center justify-center gap-1.5 text-xs text-muted">
+          <Spinner className="h-3 w-3" />
+          Waiting for your teacher…
+        </p>
+      )}
       {demoCodes && <DemoCode label={mode === "unlock" ? "exam's copy code" : "refresh code"} code={mode === "unlock" ? demoCodes.copy : demoCodes.refresh} />}
 
       <form onSubmit={submit} className="mt-5 space-y-3">

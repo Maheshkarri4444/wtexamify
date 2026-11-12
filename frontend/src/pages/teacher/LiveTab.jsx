@@ -29,7 +29,7 @@ import { Badge } from "../../components/ui/Badge";
 import { Button, IconButton } from "../../components/ui/Button";
 import { Card, CardHeader } from "../../components/ui/Card";
 import { Meter, StatTile } from "../../components/ui/Data";
-import { Callout, EmptyState, PageLoader } from "../../components/ui/Feedback";
+import { Callout, EmptyState, PageLoader, Spinner } from "../../components/ui/Feedback";
 import { Input, Segmented } from "../../components/ui/Form";
 import { ConfirmModal, InfoTip, Menu, Tooltip } from "../../components/ui/Overlay";
 import { cn } from "../../lib/cn";
@@ -134,6 +134,9 @@ function confirmDetails(confirm, writing, submitted) {
   }
 }
 
+// What a row says while its action runs.
+const PENDING_LABELS = { unlock: "Unlocking…", new_set: "Giving a new set…", extend: "Adding time…", submit: "Submitting…", reopen: "Reopening…" };
+
 export default function LiveTab() {
   const { bundle, reload } = useOutletContext();
   const { exam } = bundle;
@@ -143,6 +146,8 @@ export default function LiveTab() {
   const [viewing, setViewing] = useState(null);
   const [confirm, setConfirm] = useState(null); // an action waiting for the teacher to confirm it
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState({}); // attempt id → the action running on it, so its row shows a spinner
+  const [unlockingAll, setUnlockingAll] = useState(false);
   const offset = useRef(0);
   const now = useNow(1000);
 
@@ -173,6 +178,7 @@ export default function LiveTab() {
 
   const act = async (row, action, minutes) => {
     setBusy(true);
+    setPending((current) => ({ ...current, [row.attempt_id]: action }));
     try {
       await teacherApi.attemptAction(exam.id, row.attempt_id, action, minutes);
       const messages = {
@@ -184,12 +190,13 @@ export default function LiveTab() {
       };
       toast.success(messages[action]);
       setConfirm(null);
-      refresh();
+      await refresh(); // the row shows its new state before its spinner goes
       if (action === "submit" || action === "reopen") reload();
     } catch (error) {
       toast.error(error.message);
     } finally {
       setBusy(false);
+      setPending(({ [row.attempt_id]: _done, ...rest }) => rest);
     }
   };
 
@@ -199,7 +206,7 @@ export default function LiveTab() {
       const { extended } = await teacherApi.extendAll(exam.id, minutes);
       toast.success(`Added ${minutes} minutes for ${extended} student${extended === 1 ? "" : "s"} still writing.`);
       setConfirm(null);
-      refresh();
+      await refresh();
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -210,14 +217,16 @@ export default function LiveTab() {
   // For mistakes and errors: no confirm for unlocking (like Unlock), one for unsubmitting.
   const unlockEveryone = async () => {
     setBusy(true);
+    setUnlockingAll(true);
     try {
       const { unlocked } = await teacherApi.unlockAll(exam.id);
       toast.success(unlocked ? `Unlocked ${unlocked} student${unlocked === 1 ? "" : "s"}.` : "Nobody was locked.");
-      refresh();
+      await refresh();
     } catch (error) {
       toast.error(error.message);
     } finally {
       setBusy(false);
+      setUnlockingAll(false);
     }
   };
 
@@ -227,7 +236,7 @@ export default function LiveTab() {
       const { reopened } = await teacherApi.reopenAll(exam.id);
       toast.success(`Reopened ${reopened} sheet${reopened === 1 ? "" : "s"}. Ask those students to reload the exam page.`);
       setConfirm(null);
-      refresh();
+      await refresh();
       reload();
     } catch (error) {
       toast.error(error.message);
@@ -306,12 +315,19 @@ export default function LiveTab() {
                           <div className="max-w-[12rem] truncate text-xs text-muted">{row.name || row.email}</div>
                         </td>
                         <td className="px-3 py-3">
-                          <Tooltip content={<StatusHelp state={row.state} reason={row.locked ? row.lock_reason : ""} />}>
-                            <Badge tone={row.state.tone} icon={row.state.icon}>
-                              {row.state.label}
-                              <Info className="h-3 w-3 opacity-60" />
-                            </Badge>
-                          </Tooltip>
+                          {pending[row.attempt_id] ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-subtle px-2.5 py-0.5 text-xs font-medium text-ink-2">
+                              <Spinner className="h-3 w-3" />
+                              {PENDING_LABELS[pending[row.attempt_id]]}
+                            </span>
+                          ) : (
+                            <Tooltip content={<StatusHelp state={row.state} reason={row.locked ? row.lock_reason : ""} />}>
+                              <Badge tone={row.state.tone} icon={row.state.icon}>
+                                {row.state.label}
+                                <Info className="h-3 w-3 opacity-60" />
+                              </Badge>
+                            </Tooltip>
+                          )}
                           {row.locked && row.lock_reason && <div className="mt-1 max-w-[12rem] truncate text-[11px] text-danger-text">{row.lock_reason}</div>}
                           {writing && row.flags && !row.flags.sharing && exam.settings.require_screen_share && !row.locked && (
                             <Tooltip content="Their last check-in said screen sharing is off. They'll be locked once their browser notices; if not, check their laptop." className="mt-1">
@@ -358,7 +374,11 @@ export default function LiveTab() {
                         </td>
                         <td className="px-3 py-3 text-xs text-muted">{row.status === "submitted" ? timeAgo(row.submitted_at, now) : row.last_seen_at ? timeAgo(row.last_seen_at, now) : "—"}</td>
                         <td className="py-3 pr-5 text-right">
-                          {row.attempt_id && (
+                          {row.attempt_id && pending[row.attempt_id] ? (
+                            <span className="inline-flex h-8 w-8 items-center justify-center" aria-label={`${PENDING_LABELS[pending[row.attempt_id]]} ${row.roll}`}>
+                              <Spinner className="h-4 w-4 text-muted" />
+                            </span>
+                          ) : row.attempt_id && (
                             <Menu
                               trigger={({ toggle }) => <IconButton icon={MoreHorizontal} label={`Actions for ${row.roll}`} size="sm" onClick={toggle} />}
                               items={[
@@ -413,7 +433,7 @@ export default function LiveTab() {
             </div>
             <p className="mt-1 text-[13px] text-muted">Unlock every locked paper, or reopen every submitted sheet.</p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button variant="secondary" size="sm" icon={Unlock} onClick={unlockEveryone} disabled={!counts.locked || busy}>
+              <Button variant="secondary" size="sm" icon={Unlock} onClick={unlockEveryone} loading={unlockingAll} disabled={!counts.locked || busy}>
                 Unlock all{counts.locked ? ` (${counts.locked})` : ""}
               </Button>
               <Button

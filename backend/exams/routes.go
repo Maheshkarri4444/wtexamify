@@ -21,6 +21,7 @@ func RegisterRoutes(r *gin.Engine) {
 	teacher := api.Group("/teacher", middleware.TeacherMiddleware())
 	{
 		teacher.GET("/teachers", listTeachers)
+		teacher.GET("/ai-keys", aiKeysStatus) // the Gemini key pool: who holds which key, and how each is doing
 		teacher.GET("/exams", listExams)
 		teacher.POST("/exams", createExam)
 		teacher.GET("/exams/:id", getExam)
@@ -75,6 +76,11 @@ func RegisterRoutes(r *gin.Engine) {
 func Start() {
 	ensureIndexes()
 	startGrader()
+	go func() {
+		for range time.Tick(time.Minute) {
+			logAIKeys()
+		}
+	}()
 	go func() {
 		ticker := time.NewTicker(20 * time.Second)
 		defer ticker.Stop()

@@ -284,7 +284,8 @@ func fakeGemini(t *testing.T, reply func(key, model string) (int, string)) *[]st
 			return true
 		})
 	}
-	keyTurn.Store(0) // each test's first check starts from the first key
+	resetAIPool() // nobody holds a key, and the first one dealt is the first key
+	t.Cleanup(resetAIPool)
 	previousRetry := aiRetryFor
 	aiRetryFor = 0 // one round and the last resort, unless a test is about going round again
 	t.Cleanup(func() { aiRetryFor = previousRetry })

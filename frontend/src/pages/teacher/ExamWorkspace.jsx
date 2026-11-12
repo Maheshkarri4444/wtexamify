@@ -118,12 +118,13 @@ const ExamWorkspace = () => {
   };
 
   const duplicate = async () => {
+    const working = toast.loading("Copying the exam…");
     try {
       const { id: copyId } = await teacherApi.duplicate(id);
-      toast.success("Copied into a new draft of your own, without students.");
+      toast.success("Copied into a new draft of your own, without students.", { id: working });
       navigate(`/teacher/exams/${copyId}`);
     } catch (error) {
-      toast.error(error.message);
+      toast.error(error.message, { id: working });
     }
   };
 

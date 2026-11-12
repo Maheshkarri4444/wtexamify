@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { schemaSummary } from "./tables";
 import { QUESTION_TYPES, SUBMIT_REASONS, formatDateTime, formatNumber, formatSpan, languageLabel, letter, paperLabels, partGroups, splitShared, testLabels, testOutcome } from "./format";
 
 // A4 portrait, in points.
@@ -318,7 +319,7 @@ function question(w, item, internal, grading, label, text = item.text) {
   w.rule(9);
 }
 
-function sheet(w, exam, { student, items }) {
+function sheet(w, exam, { student, items, set_context: setTables }) {
   const internal = exam.type === "internal";
   w.owner = `${student.roll}${student.name ? ` · ${student.name}` : ""}`;
   if (w.doc.getNumberOfPages() > 1 || w.y > MARGIN) w.newPage();
@@ -327,6 +328,11 @@ function sheet(w, exam, { student, items }) {
   w.text(internal ? "Question paper" : "Answer sheet", { size: 9.5, color: MUTED });
   w.y += 10;
   details(w, exam, student);
+  const tables = setTables ? schemaSummary(setTables) : [];
+  if (tables.length) {
+    w.y += 4;
+    w.text(`Tables of set ${student.set}: ${tables.join("  ·  ")}`, { size: 9.2, color: INK_2 });
+  }
   w.rule(10);
   if (!items.length) w.text("This student hasn't been dealt a paper yet.", { size: 10, color: MUTED });
   const labels = paperLabels(items.map((item) => item.text));

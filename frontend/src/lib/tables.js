@@ -42,3 +42,24 @@ export function parseBlocks(text, { sql = false } = {}) {
 }
 
 export const hasTable = (text, options) => parseBlocks(text, options).some((block) => block.kind === "table");
+
+/**
+ * Each table of a schema with its columns, for a one-line summary:
+ * ["Books (BOOK_ID, TITLE, PRICE)", …]. Titled tables come first; failing
+ * those, the CREATE TABLE statements are read.
+ */
+export function schemaSummary(text) {
+  const titled = parseBlocks(text, { sql: true })
+    .filter((block) => block.kind === "table" && block.title)
+    .map((block) => `${block.title} (${block.header.join(", ")})`);
+  if (titled.length) return titled;
+  const tables = [];
+  for (const match of String(text ?? "").matchAll(/create\s+table\s+([\w$"]+)\s*\(([\s\S]*?)\)\s*;/gi)) {
+    const columns = match[2]
+      .split(/,(?![^(]*\))/)
+      .map((part) => part.trim().split(/\s+/)[0])
+      .filter((name) => name && !/^(primary|foreign|constraint|unique|check|key)$/i.test(name));
+    tables.push(`${match[1]} (${columns.join(", ")})`);
+  }
+  return tables;
+}

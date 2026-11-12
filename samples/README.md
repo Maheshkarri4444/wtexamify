@@ -9,6 +9,7 @@ Every file imports with no warnings. Sign in at `http://localhost:5173/dev` as *
 | `external-dbms-9-questions.xlsx` | External | 9 DBMS questions, 3 per difficulty: 7 SQL, 1 PHP + MySQL, 1 Python + MySQL. Covers public and private tests, starter code, and a question with no test cases. |
 | `external-dbms-schema.sql` | External | The tables and rows the DBMS questions use. Paste it into **Questions → Shared schema and data**. |
 | `external-dsa-6-questions.xlsx` | External | 6 DSA questions: 4 in any language (the student picks), 1 in C, 1 in Java. |
+| `external-dbms-6-sql-sets.xlsx` | External | Your own sets, as in the DBMS lab exams: 3 sets of 6 SQL queries, 5 marks each. Each set has its own database (library, company, sales), given once on the **Sets** sheet. Every query has a public test and a private one (the same tables after a few changes); the expected outputs were worked out by running the answers on the rows. |
 | `students.xlsx` | Any | The six dev-login students, by email. Import it under **Students**. |
 
 ## Getting exactly 3 sets
@@ -16,6 +17,7 @@ Every file imports with no warnings. Sign in at `http://localhost:5173/dev` as *
 - **Viva:** 10 questions per set, balanced 4 easy, 4 medium and 2 hard. Each set gets its own 10 questions with no repeats.
 - **Internal and DBMS external:** 3 questions per set, balanced 1 easy, 1 medium and 1 hard.
 - **DSA external:** with the same 1/1/1 blueprint, the 6 questions make 2 sets.
+- **Six SQL queries per set:** `external-dbms-6-sql-sets.xlsx` has a set column, so it imports as your own 3 sets of 6, each with its tables (the preview says *with tables and data for 3 sets*). Students see their set's tables above every query, and each query has its own editor and Run.
 
 ## A quick test run
 

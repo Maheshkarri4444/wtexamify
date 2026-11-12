@@ -182,6 +182,8 @@ func runCode(c *gin.Context) {
 		return
 	}
 
+	// The check uses the key this student holds in the key pool.
+	ctx = withAIOwner(ctx, attemptOwner(att.ID), rollNumber(att.StudentEmail))
 	verdict, err := checkAnswer(ctx, q, language, req.Code, contextFor(exam, att.SetNumber, q))
 	if err != nil {
 		respondErr(c, aiErrorResponse(err))

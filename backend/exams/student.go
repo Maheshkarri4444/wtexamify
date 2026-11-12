@@ -358,6 +358,9 @@ func startAttempt(c *gin.Context) {
 		respondErr(c, err)
 		return
 	}
+	if exam.Type == TypeExternal {
+		assignAIKey(attemptOwner(att.ID), rollNumber(att.StudentEmail))
+	}
 	respondPaper(c, exam, &att)
 }
 
@@ -381,6 +384,9 @@ func resumeAttempt(ctx context.Context, c *gin.Context, exam *Exam, att *Attempt
 			respondErr(c, err)
 			return
 		}
+	}
+	if exam.Type == TypeExternal && att.Status == AttemptInProgress {
+		assignAIKey(attemptOwner(att.ID), rollNumber(att.StudentEmail)) // keeps the key they hold
 	}
 	respondPaper(c, exam, att)
 }

@@ -25,6 +25,7 @@ import {
   Unlock,
   X,
 } from "lucide-react";
+import { ContextSection } from "../../components/exam/DataText";
 import { DifficultyBadge, QuestionText, QuestionTypeBadge } from "../../components/exam/ExamBits";
 import { Badge } from "../../components/ui/Badge";
 import { Button, IconButton } from "../../components/ui/Button";
@@ -301,6 +302,7 @@ export default function AttemptDrawer({ examId, examType, examTitle, attemptId, 
   const [data, setData] = useState(null);
   const [view, setView] = useState("answers");
   const [regrading, setRegrading] = useState(false);
+  const [makingPdf, setMakingPdf] = useState(false);
 
   const load = useCallback(() => {
     if (!attemptId) return Promise.resolve();
@@ -351,12 +353,15 @@ export default function AttemptDrawer({ examId, examType, examTitle, attemptId, 
   };
 
   const downloadPdf = async () => {
+    setMakingPdf(true);
     try {
       const { answerSheetFileName, downloadAnswerSheets } = await import("../../lib/answerSheetsPdf");
       const exam = { title: examTitle || "Exam", type: examType };
-      downloadAnswerSheets(exam, [{ student: data.student, items: data.items }], answerSheetFileName(exam, data.student));
+      downloadAnswerSheets(exam, [{ student: data.student, items: data.items, set_context: data.set_context }], answerSheetFileName(exam, data.student));
     } catch {
       toast.error("Couldn't make the PDF. Try again.");
+    } finally {
+      setMakingPdf(false);
     }
   };
 
@@ -390,7 +395,7 @@ export default function AttemptDrawer({ examId, examType, examTitle, attemptId, 
                 Re-check with AI
               </Button>
             )}
-            <Button size="sm" variant="secondary" icon={FileText} onClick={downloadPdf} title="Download this answer sheet as a PDF">
+            <Button size="sm" variant="secondary" icon={FileText} onClick={downloadPdf} loading={makingPdf} title="Download this answer sheet as a PDF">
               PDF
             </Button>
           </>
@@ -423,7 +428,14 @@ export default function AttemptDrawer({ examId, examType, examTitle, attemptId, 
             </span>
           </div>
           {view === "answers" ? (
-            <AnswerList items={data.items} onSaveMarks={saveMarks} grading={data.grading} />
+            <>
+              {data.set_context && (
+                <div className="px-6 pt-4">
+                  <ContextSection title={`Tables and data for set ${student.set}`} text={data.set_context} definitions={false} defaultOpen={false} />
+                </div>
+              )}
+              <AnswerList items={data.items} onSaveMarks={saveMarks} grading={data.grading} />
+            </>
           ) : (
             <ol className="relative space-y-0 px-6 py-5">
               {data.events.map((event, i) => {

@@ -42,7 +42,7 @@ const BLOCKED_MESSAGES = {
 const CLIPBOARD_KINDS = new Set(["copy", "cut", "paste", "contextmenu", "drop"]);
 const HEARTBEAT_MS = 10000;
 // A locked student is waiting on the teacher: look for the unlock (or a submit) sooner.
-const LOCKED_CHECK_MS = 5000;
+const LOCKED_CHECK_MS = 3000;
 const SAVE_DELAY_MS = 1200;
 
 // n210507@rguktn.ac.in is the testing account: the only student who may always

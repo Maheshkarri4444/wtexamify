@@ -78,6 +78,8 @@ export default function ImportQuestionsModal({ open, onClose, existingTexts, onI
   const errors = result?.issues.filter((i) => i.level === "error") ?? [];
   const sets = result?.custom ? new Set(result.questions.map((q) => q.set)) : null;
   const withSchema = result?.questions.filter((q) => q.context).length ?? 0;
+  // What has tables: questions with their own, and sets with theirs on the Sets sheet.
+  const tablesFor = [withSchema && pluralize(withSchema, "question"), result?.setContexts?.length && `${pluralize(result.setContexts.length, "set")} (from the Sets sheet)`].filter(Boolean);
   const warnings = result?.issues.filter((i) => i.level === "warning") ?? [];
 
   return (
@@ -143,7 +145,7 @@ export default function ImportQuestionsModal({ open, onClose, existingTexts, onI
             <div className="text-sm font-medium text-ink">Start from a template</div>
             <p className="mt-0.5 text-[13px] text-muted">
               {examType === "external"
-                ? "One row per question: language, your answer, optional starter code and test cases. For your own sets, add a set column (and a schema column for each question's tables). A “How to fill it” sheet explains each column."
+                ? "One row per question: language, your answer, optional starter code and test cases. For your own sets, add a set column, and give each set's tables once on a Sets sheet (or each question's in a schema column). A “How to fill it” sheet explains each column."
                 : examType === "internal"
                   ? "One row per question, with optional difficulty and marks."
                   : "Each template has example rows and a “How to fill it” sheet. Mix types freely in one file."}
@@ -182,8 +184,8 @@ export default function ImportQuestionsModal({ open, onClose, existingTexts, onI
 
           {sets && result.questions.length > 0 && (
             <Callout tone="info" icon={Layers3}>
-              Your own sets: {pluralize(sets.size, "set")}, as numbered in the sheet{withSchema ? `, with tables and data for ${pluralize(withSchema, "question")}` : ""}
-              {result.setContexts.length ? ` and ${pluralize(result.setContexts.length, "set")}` : ""}. Each student gets one whole set, dealt in turn by email order.
+              Your own sets: {pluralize(sets.size, "set")}, as numbered in the sheet
+              {tablesFor.length ? `, with tables and data for ${tablesFor.join(" and ")}` : ""}. Each student gets one whole set, dealt in turn by email order.
             </Callout>
           )}
           {!sets && customSets && result.questions.length > 0 && (
