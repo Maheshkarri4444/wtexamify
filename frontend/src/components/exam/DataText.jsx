@@ -3,7 +3,11 @@ import { ChevronDown, Database } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { hasTable, parseBlocks } from "../../lib/tables";
 
+// Column names like Registration_Date may wrap after their underscores.
+const wrapAtUnderscores = (name) => String(name).replace(/_/g, "_\u200b");
+
 export function DataTable({ title, header, rows, className }) {
+  const wide = header.length >= 6; // a little tighter, so wide tables fit beside the editor
   return (
     <figure className={cn("min-w-0", className)}>
       {title && <figcaption className="mb-1 text-[12.5px] font-semibold text-ink">{title}</figcaption>}
@@ -12,8 +16,8 @@ export function DataTable({ title, header, rows, className }) {
           <thead className="bg-subtle text-ink-2">
             <tr>
               {header.map((cell, i) => (
-                <th key={i} scope="col" className="whitespace-nowrap border-b border-line px-2.5 py-1.5 font-semibold">
-                  {cell}
+                <th key={i} scope="col" className={cn("border-b border-line py-1.5 align-bottom font-semibold", wide ? "px-2" : "px-2.5")}>
+                  {wrapAtUnderscores(cell)}
                 </th>
               ))}
             </tr>
@@ -22,7 +26,7 @@ export function DataTable({ title, header, rows, className }) {
             {rows.map((row, r) => (
               <tr key={r}>
                 {row.map((cell, i) => (
-                  <td key={i} className={cn("whitespace-nowrap px-2.5 py-1 text-ink", cell === "NULL" && "italic text-muted")}>
+                  <td key={i} className={cn("whitespace-nowrap py-1 text-ink", wide ? "px-2" : "px-2.5", cell === "NULL" && "italic text-muted")}>
                     {cell}
                   </td>
                 ))}

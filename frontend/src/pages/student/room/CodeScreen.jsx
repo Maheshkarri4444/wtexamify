@@ -373,7 +373,8 @@ export default function CodeScreen({ info, state, setContext, questions, answers
       {question && (
         <>
           <QuestionTabs questions={questions} answers={answers} runs={runs} current={current} onNavigate={onNavigate} />
-          <main className="grid flex-1 lg:min-h-0 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+          {/* Half and half up to 1536 px wide, so a set's six- or seven-column tables fit beside the editor on lab screens. */}
+          <main className="grid flex-1 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
             <section className="border-b border-line bg-surface lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
               <QuestionPane question={question} index={current} total={questions.length} examContext={info.context} setContext={setContext} />
             </section>
