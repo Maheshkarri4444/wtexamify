@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { FlaskConical } from "lucide-react";
 import { ExamifyMark, ThemeToggle } from "../components/layout/AppShell";
-import { authApi } from "../lib/api";
+import { authApi, reachableBackend } from "../lib/api";
 import { getToken, getUser, homeFor } from "../lib/auth";
 
 function GoogleMark() {
@@ -31,11 +31,11 @@ const Login = () => {
     if (params.get("expired")) toast("Your session expired. Please sign in again.", { id: "expired" });
   }, [params]);
 
-  const signIn = () => {
+  const signIn = async () => {
     // A random state, checked on the way back, so a stray login link can't sign you in.
     const state = crypto.randomUUID();
     sessionStorage.setItem("oauth_state", state);
-    window.location.href = authApi.googleLoginUrl(state);
+    window.location.href = authApi.googleLoginUrl(state, await reachableBackend());
   };
 
   return (

@@ -4,5 +4,6 @@ node_modules
 
 .env.*
 !.env.example
+!frontend/.env.production
 .DS_Store
 frontend/dist
