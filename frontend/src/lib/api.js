@@ -1,4 +1,4 @@
-import { clearSession, getToken } from "./auth";
+import { getToken } from "./auth";
 
 // The Go backends, comma-separated in VITE_API_URLS (or VITE_API_URL). Each browser
 // tab picks one at random, so students spread across them, and keeps using it while
@@ -87,6 +87,8 @@ async function request(method, path, body, { timeout = TIMEOUT_MS, keepalive = f
   let response;
   let data;
   let timedOut = false;
+  let refused = null; // a "not signed in" answer, believed only if every backend gives it
+  let refusals = 0;
   for (const index of backendOrder()) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
@@ -102,6 +104,14 @@ async function request(method, path, body, { timeout = TIMEOUT_MS, keepalive = f
         markDown(index);
         continue; // never reached the app: another backend can do it
       }
+      if (answer.status === 401 && API_URLS.length > 1) {
+        // An overloaded backend could say this by mistake, and it stops before doing
+        // anything, so asking another is safe.
+        refused = answer;
+        refusals++;
+        markDown(index);
+        continue;
+      }
       response = answer;
       data = await response.json().catch(() => ({}));
       current = index; // it answered: keep using it
@@ -115,14 +125,19 @@ async function request(method, path, body, { timeout = TIMEOUT_MS, keepalive = f
       clearTimeout(timer);
     }
   }
+  if (!response && refused && refusals === API_URLS.length) {
+    response = refused;
+    data = await refused.json().catch(() => ({}));
+  }
   if (!response) {
     // status 0 means no answer came back (offline, servers down, or too slow), so callers retry.
     throw new ApiError(timedOut ? "The Examify server took too long to answer. Trying again…" : "Can't reach the Examify server. Check your connection.", 0);
   }
 
-  if (response.status === 401 && token) {
-    clearSession();
-    if (!window.location.pathname.startsWith("/login")) window.location.assign("/login?expired=1");
+  if (response.status === 401 && !/^\/(login|google)/.test(window.location.pathname)) {
+    // The login page drops the old sign-in. A student who stays on the exam page
+    // instead (it asks before leaving) keeps it, so nothing they typed is lost.
+    window.location.assign("/login?expired=1");
   }
   if (!response.ok) throw new ApiError(data.error || `Request failed (${response.status})`, response.status, data);
   return data;

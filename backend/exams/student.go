@@ -283,19 +283,27 @@ func startAttempt(c *gin.Context) {
 	ctx, cancel := dbCtx()
 	defer cancel()
 	user := userFrom(c)
-	exam, err := findExam(ctx, bson.M{"_id": examID, "allowed_students": user.Email}, nil)
-	if err != nil {
-		respondErr(c, err)
-		return
-	}
 
+	// Coming back to a paper, the usual case, reads only that student's questions
+	// and set: a 60-set exam is close to 1 MB, slow to read whole for everyone.
 	var existing Attempt
-	err = attemptsCol().FindOne(ctx, bson.M{"exam_id": exam.ID, "student_email": user.Email}).Decode(&existing)
+	err = attemptsCol().FindOne(ctx, bson.M{"exam_id": examID, "student_email": user.Email}).Decode(&existing)
 	if err == nil {
+		exam, err := loadExamForPaper(ctx, bson.M{"_id": examID, "allowed_students": user.Email}, existing.QuestionIDs, existing.SetNumber)
+		if err != nil {
+			respondErr(c, err)
+			return
+		}
 		resumeAttempt(ctx, c, exam, &existing)
 		return
 	}
 	if !errors.Is(err, mongo.ErrNoDocuments) {
+		respondErr(c, err)
+		return
+	}
+	// A new paper: check the exam is open (without its questions), then read it whole below.
+	exam, err := findExam(ctx, bson.M{"_id": examID, "allowed_students": user.Email}, liteExamProjection)
+	if err != nil {
 		respondErr(c, err)
 		return
 	}
@@ -399,7 +407,7 @@ func getAttempt(c *gin.Context) {
 		respondErr(c, err)
 		return
 	}
-	exam, err := loadExamByID(ctx, att.ExamID)
+	exam, err := loadExamForPaper(ctx, bson.M{"_id": att.ExamID}, att.QuestionIDs, att.SetNumber)
 	if err != nil {
 		respondErr(c, err)
 		return

@@ -4,7 +4,7 @@ import toast from "react-hot-toast";
 import { FlaskConical } from "lucide-react";
 import { ExamifyMark, ThemeToggle } from "../components/layout/AppShell";
 import { authApi, reachableBackend } from "../lib/api";
-import { getToken, getUser, homeFor } from "../lib/auth";
+import { clearSession, getToken, getUser, homeFor } from "../lib/auth";
 
 function GoogleMark() {
   return (
@@ -23,9 +23,14 @@ const Login = () => {
   const [params] = useSearchParams();
 
   useEffect(() => {
+    // Sent here because the server stopped accepting the sign-in: drop it and sign in again.
+    if (params.get("expired")) {
+      clearSession();
+      return;
+    }
     const user = getUser();
     if (user && getToken()) navigate(homeFor(user), { replace: true });
-  }, [navigate]);
+  }, [navigate, params]);
 
   useEffect(() => {
     if (params.get("expired")) toast("Your session expired. Please sign in again.", { id: "expired" });

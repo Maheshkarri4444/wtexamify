@@ -108,7 +108,7 @@ func runCode(c *gin.Context) {
 		respondErr(c, newError(http.StatusConflict, "Your exam is locked. Ask your teacher to unlock it."))
 		return
 	}
-	exam, err := loadExamByID(ctx, att.ExamID)
+	exam, err := loadExamForPaper(ctx, bson.M{"_id": att.ExamID}, []string{req.QuestionID}, att.SetNumber)
 	if err != nil {
 		respondErr(c, err)
 		return

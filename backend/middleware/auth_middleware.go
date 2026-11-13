@@ -14,6 +14,7 @@ import (
 	"github.com/golang-jwt/jwt"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func VerifyJWT(tokenString string) (jwt.MapClaims, error) {
@@ -59,7 +60,8 @@ var userCache sync.Map
 const userCacheTTL = 30 * time.Second
 
 func lookupUser(email string) (authUser, error) {
-	if cached, ok := userCache.Load(email); ok {
+	cached, found := userCache.Load(email)
+	if found {
 		if entry := cached.(cachedUser); time.Now().Before(entry.expires) {
 			return entry.user, nil
 		}
@@ -68,6 +70,10 @@ func lookupUser(email string) (authUser, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := config.Collection("users").FindOne(ctx, bson.M{"email": email}).Decode(&user); err != nil {
+		if found && !errors.Is(err, mongo.ErrNoDocuments) {
+			// The database is slow or unreachable: who they were a little while ago will do.
+			return cached.(cachedUser).user, nil
+		}
 		return user, err
 	}
 	userCache.Store(email, cachedUser{user: user, expires: time.Now().Add(userCacheTTL)})
@@ -99,8 +105,15 @@ func AuthMiddleware(allowedRoles ...string) gin.HandlerFunc {
 		}
 
 		user, err := lookupUser(email)
-		if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+			c.Abort()
+			return
+		}
+		if err != nil {
+			// Too busy to look them up isn't "signed out" (that sends a student
+			// writing an exam to the login page): the browser tries again.
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "The server is busy. Trying again…"})
 			c.Abort()
 			return
 		}

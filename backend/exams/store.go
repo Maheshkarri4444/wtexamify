@@ -126,18 +126,60 @@ func teacherExams(user currentUser) bson.M {
 // it's shared with see and do everything the owner does, except what checks
 // ownsExam: changing the questions, deleting the exam and sharing it.
 func loadExam(ctx context.Context, c *gin.Context) (*Exam, error) {
+	return loadExamFields(ctx, c, nil)
+}
+
+// loadExamFields is loadExam reading only some fields: a 60-set exam is close to
+// 1 MB, too much to read on every live-board refresh.
+func loadExamFields(ctx context.Context, c *gin.Context, projection bson.M) (*Exam, error) {
 	examID, err := idParam(c, "id")
 	if err != nil {
 		return nil, err
 	}
 	filter := teacherExams(userFrom(c))
 	filter["_id"] = examID
+	opts := options.FindOne()
+	if projection != nil {
+		opts.SetProjection(projection)
+	}
 	var exam Exam
-	err = examsCol().FindOne(ctx, filter).Decode(&exam)
+	err = examsCol().FindOne(ctx, filter, opts).Decode(&exam)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, errExamNotFound
 	}
 	return &exam, err
+}
+
+// loadExamForPaper reads an exam with only one student's questions and their set:
+// all a paper, a Run or grading needs. A 60-set exam is close to 1 MB, and reading
+// it whole takes seconds, too slow to do for every student.
+func loadExamForPaper(ctx context.Context, filter bson.M, questionIDs []string, setNumber int) (*Exam, error) {
+	if questionIDs == nil {
+		questionIDs = []string{}
+	}
+	cursor, err := examsCol().Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$match", Value: filter}},
+		{{Key: "$project", Value: bson.M{"report": 0, "assignments": 0, "allowed_students": 0, "blueprint.set_contexts": 0}}},
+		{{Key: "$set", Value: bson.M{
+			"questions": bson.M{"$filter": bson.M{"input": bson.M{"$ifNull": bson.A{"$questions", bson.A{}}}, "cond": bson.M{"$in": bson.A{"$$this.id", questionIDs}}}},
+			"sets":      bson.M{"$filter": bson.M{"input": bson.M{"$ifNull": bson.A{"$sets", bson.A{}}}, "cond": bson.M{"$eq": bson.A{"$$this.number", setNumber}}}},
+		}}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	if !cursor.Next(ctx) {
+		if err := cursor.Err(); err != nil {
+			return nil, err
+		}
+		return nil, newError(http.StatusNotFound, "This exam isn't available for your account.")
+	}
+	var exam Exam
+	if err := cursor.Decode(&exam); err != nil {
+		return nil, err
+	}
+	return &exam, nil
 }
 
 func ownsExam(c *gin.Context, e *Exam) bool { return e.OwnerID == userFrom(c).ID }

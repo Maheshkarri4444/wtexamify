@@ -70,7 +70,7 @@ func gradeWithAI(id primitive.ObjectID) {
 	if att.Status != AttemptSubmitted || att.Grading != GradingPending {
 		return
 	}
-	exam, err := loadExamByID(ctx, att.ExamID)
+	exam, err := loadExamForPaper(ctx, bson.M{"_id": att.ExamID}, att.QuestionIDs, att.SetNumber)
 	if err != nil {
 		log.Println("grader: load exam:", err)
 		return

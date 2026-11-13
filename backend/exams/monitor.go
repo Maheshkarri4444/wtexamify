@@ -137,12 +137,13 @@ func rowFor(email, name string, set int, allowed bool, att *Attempt, now time.Ti
 func monitor(c *gin.Context) {
 	ctx, cancel := dbCtx()
 	defer cancel()
-	exam, err := loadExam(ctx, c)
+	// The board refreshes every few seconds: read the student list, not the question bank.
+	exam, err := loadExamFields(ctx, c, bson.M{"allowed_students": 1, "assignments": 1})
 	if err != nil {
 		respondErr(c, err)
 		return
 	}
-	attempts, err := attemptsFor(ctx, exam, bson.M{"answers": 0, "events": 0, "option_order": 0, "results": 0})
+	attempts, err := attemptsFor(ctx, exam, bson.M{"answers": 0, "events": 0, "option_order": 0, "results": 0, "runs": 0})
 	if err != nil {
 		respondErr(c, err)
 		return
