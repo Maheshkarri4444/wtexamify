@@ -268,6 +268,12 @@ type Attempt struct {
 	Results          []QuestionResult  `bson:"results" json:"results"`
 	Events           []Event           `bson:"events" json:"events"`
 	UserAgent        string            `bson:"user_agent" json:"user_agent"`
+	// LastActiveAt is when the student last typed, clicked, scrolled or moved the
+	// mouse in the exam, as their browser reports with each check-in; ClosedAt is
+	// when their browser said the exam page was being closed. Together they tell an
+	// idle student from one who went offline.
+	LastActiveAt *time.Time `bson:"last_active_at,omitempty" json:"-"`
+	ClosedAt     *time.Time `bson:"closed_at,omitempty" json:"-"`
 	// External exams.
 	Runs      map[string]RunResult `bson:"runs" json:"-"`
 	RunCount  int                  `bson:"run_count" json:"run_count"`

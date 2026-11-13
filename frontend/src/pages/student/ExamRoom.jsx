@@ -44,6 +44,12 @@ const HEARTBEAT_MS = 10000;
 // A locked student is waiting on the teacher: look for the unlock (or a submit) sooner.
 const LOCKED_CHECK_MS = 3000;
 const SAVE_DELAY_MS = 1200;
+// After this long without typing, clicking, scrolling or moving the mouse, the
+// student counts as idle: their header says so, and so does the teacher's board.
+const IDLE_AFTER_MS = 2 * 60 * 1000;
+// Save states a successful check-in may change: a lost connection that's back, or
+// idle and active again. Saving in progress is left alone.
+const SETTLED = new Set(["idle", "saved", "inactive", "offline", "error"]);
 
 // n210507@rguktn.ac.in is the testing account: the only student who may always
 // copy and paste, even in an exam that blocks it. The server allows it too
@@ -94,6 +100,8 @@ export default function ExamRoom() {
   const lastClipboard = useRef(0);
   const syncRef = useRef(() => {});
   const reportRef = useRef(() => {});
+  const lastActiveRef = useRef(Date.now()); // when the student last typed, clicked, scrolled or moved the mouse
+  const saveStatusRef = useRef("idle");
 
   const setRoomState = useCallback((next) => {
     stateRef.current = next;
@@ -184,7 +192,7 @@ export default function ExamRoom() {
     try {
       await flushEvents();
       const sending = dirtyRef.current;
-      const body = { flags: flagsNow(streamRef.current) };
+      const body = { flags: flagsNow(streamRef.current), idle_seconds: Math.round((Date.now() - lastActiveRef.current) / 1000) };
       if (sending) {
         body.answers = answersRef.current;
         dirtyRef.current = false;
@@ -193,6 +201,12 @@ export default function ExamRoom() {
       try {
         const { state: next } = await studentApi.sync(s.id, body);
         if (sending) setSave({ status: "saved" });
+        else {
+          // Reached the server, so not offline any more, whatever an earlier check-in said;
+          // after a while with nothing done, idle.
+          const idle = Date.now() - lastActiveRef.current >= IDLE_AFTER_MS;
+          setSave((current) => (SETTLED.has(current.status) ? { status: idle ? "inactive" : current.status === "saved" ? "saved" : "idle" } : current));
+        }
         await handleState(next);
       } catch (error) {
         if (sending) dirtyRef.current = true;
@@ -214,6 +228,32 @@ export default function ExamRoom() {
   useEffect(() => {
     syncRef.current = sync;
   }, [sync]);
+
+  useEffect(() => {
+    saveStatusRef.current = save.status;
+  }, [save.status]);
+
+  // Notice the student doing something (not idle), and tell the server when the
+  // exam page is being closed, so the teacher sees offline rather than idle.
+  useEffect(() => {
+    if (phase !== "running") return undefined;
+    lastActiveRef.current = Date.now(); // pressing Start or Resume counts
+    const active = () => {
+      lastActiveRef.current = Date.now();
+      if (saveStatusRef.current === "inactive") setSave({ status: "idle" });
+    };
+    const kinds = ["keydown", "mousedown", "mousemove", "wheel", "touchstart", "input", "scroll"];
+    kinds.forEach((kind) => document.addEventListener(kind, active, { capture: true, passive: true }));
+    const closing = () => {
+      const s = stateRef.current;
+      if (s?.status === "in_progress") studentApi.closing(s.id);
+    };
+    window.addEventListener("pagehide", closing);
+    return () => {
+      kinds.forEach((kind) => document.removeEventListener(kind, active, { capture: true }));
+      window.removeEventListener("pagehide", closing);
+    };
+  }, [phase]);
 
   const updateAnswer = useCallback((questionId, patch) => {
     const previous = answersRef.current[questionId] || { selected: [], text: "", marked: false };

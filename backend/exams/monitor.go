@@ -16,6 +16,28 @@ import (
 // A student counts as offline when their browser hasn't checked in for this long.
 const offlineAfter = 45 * time.Second
 
+// A student counts as idle after this long without typing, clicking, scrolling
+// or moving the mouse in the exam, while their browser still checks in.
+const idleAfter = 2 * time.Minute
+
+// presence says whether a student writing an exam is online, and if so whether
+// they're idle. Offline means their browser stopped checking in (the internet
+// dropped, or the computer slept) or said the exam page was closed. Idle means it
+// still checks in, but the student hasn't done anything in the exam for a while.
+func presence(att *Attempt, now time.Time) (online, idle bool) {
+	if att.Status != AttemptInProgress {
+		return false, false
+	}
+	if att.ClosedAt != nil && !att.ClosedAt.Before(att.LastSeenAt) {
+		return false, false // closed the page and hasn't checked in since
+	}
+	if now.Sub(att.LastSeenAt) >= offlineAfter {
+		return false, false
+	}
+	// A browser from before activity was reported checks in without saying.
+	return true, att.LastActiveAt != nil && now.Sub(*att.LastActiveAt) >= idleAfter
+}
+
 type monitorRow struct {
 	Email           string      `json:"email"`
 	Name            string      `json:"name"`
@@ -27,6 +49,9 @@ type monitorRow struct {
 	Locked          bool        `json:"locked"`
 	LockReason      string      `json:"lock_reason"`
 	Online          bool        `json:"online"`
+	Idle            bool        `json:"idle"`       // online, but hasn't done anything in the exam for a while
+	IdleSince       *time.Time  `json:"idle_since"` // when the student last did something, while idle
+	Closed          bool        `json:"closed"`     // the browser said the exam page was closed
 	Answered        int         `json:"answered"`
 	Total           int         `json:"total"`
 	Violations      int         `json:"violations"`
@@ -96,7 +121,11 @@ func rowFor(email, name string, set int, allowed bool, att *Attempt, now time.Ti
 	row.StartedAt, row.DeadlineAt, row.LastSeenAt = &att.StartedAt, &att.DeadlineAt, &att.LastSeenAt
 	row.SubmittedAt, row.SubmitReason = att.SubmittedAt, att.SubmitReason
 	row.Runs, row.Grading = att.RunCount, att.Grading
-	row.Online = att.Status == AttemptInProgress && now.Sub(att.LastSeenAt) < offlineAfter
+	row.Online, row.Idle = presence(att, now)
+	if row.Idle {
+		row.IdleSince = att.LastActiveAt
+	}
+	row.Closed = att.Status == AttemptInProgress && att.ClosedAt != nil && !att.ClosedAt.Before(att.LastSeenAt)
 	if att.Status == AttemptSubmitted {
 		score, maxScore, pct := att.Score, att.MaxScore, percent(att.Score, att.MaxScore)
 		row.Score, row.MaxScore, row.Percent = &score, &maxScore, &pct
@@ -155,7 +184,11 @@ func monitor(c *gin.Context) {
 		default:
 			summary["not_started"]++
 		}
-		if row.Status == AttemptInProgress && !row.Online {
+		switch { // of those writing; a locked paper shows as locked
+		case row.Status != AttemptInProgress || row.Locked:
+		case row.Idle:
+			summary["idle"]++
+		case !row.Online:
 			summary["offline"]++
 		}
 	}

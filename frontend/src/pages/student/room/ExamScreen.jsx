@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Check, ChevronLeft, ChevronRight, Clock3, CloudOff, Flag, KeyRound, Loader2, Send, Eraser } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Clock3, CloudOff, Flag, KeyRound, Loader2, Send, Eraser, PauseCircle } from "lucide-react";
 import { Logo, ThemeToggle } from "../../../components/layout/AppShell";
 import { QuestionText } from "../../../components/exam/ExamBits";
 import { Badge, Kbd } from "../../../components/ui/Badge";
@@ -76,6 +76,7 @@ function SaveIndicator({ save }) {
     saved: { icon: Check, text: "Saved", tone: "text-success-text" },
     pending: { icon: Loader2, text: "Saving…", tone: "text-muted", spin: true },
     saving: { icon: Loader2, text: "Saving…", tone: "text-muted", spin: true },
+    inactive: { icon: PauseCircle, text: "Idle · all saved", tone: "text-muted" },
     offline: { icon: CloudOff, text: "Offline, retrying", tone: "text-warning-text" },
     error: { icon: CloudOff, text: "Not saved, retrying", tone: "text-danger-text" },
   };

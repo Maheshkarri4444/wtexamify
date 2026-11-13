@@ -12,6 +12,7 @@ import {
   Lock,
   MonitorOff,
   MoreHorizontal,
+  PauseCircle,
   PencilLine,
   Plus,
   Radio,
@@ -34,7 +35,7 @@ import { Input, Segmented } from "../../components/ui/Form";
 import { ConfirmModal, InfoTip, Menu, Tooltip } from "../../components/ui/Overlay";
 import { cn } from "../../lib/cn";
 import { teacherApi } from "../../lib/api";
-import { formatClock, pluralize, timeAgo } from "../../lib/format";
+import { formatClock, formatSpan, pluralize, timeAgo } from "../../lib/format";
 import { useNow, usePolling } from "../../lib/hooks";
 import AttemptDrawer from "./AttemptDrawer";
 
@@ -44,9 +45,13 @@ const STATUS_HELP = {
     title: "Locked",
     text: "The student left the exam, so their paper is hidden until you let them back in. Type the copy code on their laptop, or choose Unlock from the ⋯ menu on this row. Their saved answers are kept.",
   },
+  idle: {
+    title: "Idle",
+    text: "Connected, but they haven't typed, clicked or scrolled for 2 minutes or more: reading, thinking, or away from the laptop. Everything they wrote is saved. It goes back to Writing as soon as they do something.",
+  },
   offline: {
     title: "Offline",
-    text: "Their browser hasn't checked in for over 45 seconds: the laptop may be asleep, off Wi-Fi, or the tab was closed. Everything saved so far is safe; they continue when they reconnect.",
+    text: "Their browser hasn't checked in for over 45 seconds, or the exam page was closed: the laptop may be asleep or off Wi-Fi. Everything saved so far is safe; they continue when they reconnect.",
   },
   writing: { title: "Writing", text: "The student is writing. Their answers save automatically every few seconds." },
   not_started: { title: "Not started", text: "This student hasn't opened the exam yet." },
@@ -59,16 +64,18 @@ function statusOf(row) {
   if (row.status === "submitted") return { key: "submitted", label: "Submitted", tone: "success", icon: CheckCircle2 };
   if (row.status === "in_progress" && row.locked) return { key: "locked", label: "Locked", tone: "danger", icon: Lock };
   if (row.status === "in_progress" && !row.online) return { key: "offline", label: "Offline", tone: "warning", icon: WifiOff };
+  if (row.status === "in_progress" && row.idle) return { key: "idle", label: "Idle", tone: "neutral", icon: PauseCircle };
   if (row.status === "in_progress") return { key: "writing", label: "Writing", tone: "info", icon: PencilLine };
   return { key: "not_started", label: "Not started", tone: "neutral", icon: CircleDashed };
 }
 
-function StatusHelp({ state, reason }) {
+function StatusHelp({ state, reason, note }) {
   const help = STATUS_HELP[state.help || state.key];
   return (
     <span className="block">
       <span className="block font-semibold text-ink">{help.title}</span>
       {reason && <span className="mt-0.5 block text-danger-text">Why: {reason}</span>}
+      {note && <span className="mt-0.5 block text-ink-2">{note}</span>}
       <span className="mt-1 block">{help.text}</span>
     </span>
   );
@@ -164,13 +171,13 @@ export default function LiveTab() {
 
   const rows = useMemo(() => (data?.rows || []).map((row) => ({ ...row, state: statusOf(row) })), [data]);
   const counts = useMemo(() => {
-    const c = { all: rows.length, writing: 0, locked: 0, offline: 0, not_started: 0, submitted: 0 };
+    const c = { all: rows.length, writing: 0, idle: 0, locked: 0, offline: 0, not_started: 0, submitted: 0 };
     for (const row of rows) c[row.state.key]++;
     return c;
   }, [rows]);
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const order = { locked: 0, offline: 1, writing: 2, not_started: 3, submitted: 4 };
+    const order = { locked: 0, offline: 1, idle: 2, writing: 3, not_started: 4, submitted: 5 };
     return rows
       .filter((row) => (filter === "all" || row.state.key === filter) && (!q || row.email.includes(q) || row.roll.toLowerCase().includes(q) || row.name?.toLowerCase().includes(q)))
       .sort((a, b) => order[a.state.key] - order[b.state.key] || a.email.localeCompare(b.email));
@@ -260,7 +267,14 @@ export default function LiveTab() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <StatTile label="Allowed" info="Everyone on this exam's student list." value={summary.allowed || 0} icon={Users} tone="neutral" />
         <StatTile label="Not started" info="On the list, but hasn't opened the paper yet." value={summary.not_started || 0} icon={CircleDashed} tone="neutral" />
-        <StatTile label="Writing" info="Writing right now. Offline means their browser hasn't checked in for a while; what they saved so far is safe." value={summary.writing || 0} icon={PencilLine} tone="info" hint={summary.offline ? `${summary.offline} offline` : "All online"} />
+        <StatTile
+          label="Writing"
+          info="Writing right now. Idle means connected but not typing, clicking or scrolling for 2 minutes; offline means their browser stopped checking in or the exam page was closed. What they saved so far is safe."
+          value={summary.writing || 0}
+          icon={PencilLine}
+          tone="info"
+          hint={[summary.idle && `${summary.idle} idle`, summary.offline && `${summary.offline} offline`].filter(Boolean).join(" · ") || "All online"}
+        />
         <StatTile label="Locked" info="Papers locked because the student left the tab, left fullscreen or stopped sharing. Unlock them from their row, or type the copy code on their laptop." value={summary.locked || 0} icon={ShieldAlert} tone="danger" hint={summary.locked ? "Waiting for you" : "No one"} />
         <StatTile label="Submitted" info="Handed in by the student, or automatically when time ran out or after too many violations." value={summary.submitted || 0} icon={CheckCircle2} tone="success" />
       </div>
@@ -276,6 +290,7 @@ export default function LiveTab() {
                 { value: "all", label: "All", count: counts.all },
                 { value: "locked", label: "Locked", count: counts.locked },
                 { value: "writing", label: "Writing", count: counts.writing },
+                { value: "idle", label: "Idle", count: counts.idle },
                 { value: "offline", label: "Offline", count: counts.offline },
                 { value: "not_started", label: "Not started", count: counts.not_started },
                 { value: "submitted", label: "Submitted", count: counts.submitted },
@@ -308,6 +323,8 @@ export default function LiveTab() {
                   {visible.map((row) => {
                     const left = row.deadline_at ? new Date(row.deadline_at).getTime() - (now + offset.current) : null;
                     const writing = row.status === "in_progress";
+                    const quietFor = row.state.key === "idle" && row.idle_since ? formatSpan(now + offset.current - new Date(row.idle_since).getTime()) : "";
+                    const closed = row.state.key === "offline" && row.closed;
                     return (
                       <tr key={row.email} className={cn("transition hover:bg-subtle/50", row.state.key === "locked" && "bg-danger-soft/40")}>
                         <td className="py-3 pl-5">
@@ -321,7 +338,15 @@ export default function LiveTab() {
                               {PENDING_LABELS[pending[row.attempt_id]]}
                             </span>
                           ) : (
-                            <Tooltip content={<StatusHelp state={row.state} reason={row.locked ? row.lock_reason : ""} />}>
+                            <Tooltip
+                              content={
+                                <StatusHelp
+                                  state={row.state}
+                                  reason={row.locked ? row.lock_reason : ""}
+                                  note={quietFor ? `Nothing done in the exam for ${quietFor}.` : closed ? "Their browser said the exam page was closed." : ""}
+                                />
+                              }
+                            >
                               <Badge tone={row.state.tone} icon={row.state.icon}>
                                 {row.state.label}
                                 <Info className="h-3 w-3 opacity-60" />
@@ -329,6 +354,8 @@ export default function LiveTab() {
                             </Tooltip>
                           )}
                           {row.locked && row.lock_reason && <div className="mt-1 max-w-[12rem] truncate text-[11px] text-danger-text">{row.lock_reason}</div>}
+                          {quietFor && <div className="mt-1 text-[11px] text-muted">No activity for {quietFor}</div>}
+                          {closed && <div className="mt-1 text-[11px] text-muted">Closed the exam page</div>}
                           {writing && row.flags && !row.flags.sharing && exam.settings.require_screen_share && !row.locked && (
                             <Tooltip content="Their last check-in said screen sharing is off. They'll be locked once their browser notices; if not, check their laptop." className="mt-1">
                               <span className="flex items-center gap-1 text-[11px] text-warning-text">

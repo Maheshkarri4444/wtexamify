@@ -17,7 +17,7 @@ const TIMEOUT_MS = 20000;
 const AI_TIMEOUT_MS = 170000; // the server gives an AI check up to 150 s
 const EXPORT_TIMEOUT_MS = 90000;
 
-async function request(method, path, body, { timeout = TIMEOUT_MS } = {}) {
+async function request(method, path, body, { timeout = TIMEOUT_MS, keepalive = false } = {}) {
   const token = getToken();
   const headers = { Accept: "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -33,6 +33,7 @@ async function request(method, path, body, { timeout = TIMEOUT_MS } = {}) {
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
+      keepalive, // lets a request finish after the page is gone
     });
     data = await response.json().catch(() => ({}));
   } catch {
@@ -105,6 +106,8 @@ export const studentApi = {
   attempt: (aid) => get(attempt(aid)),
   sync: (aid, body) => post(`${attempt(aid)}/sync`, body),
   event: (aid, type, detail, id) => post(`${attempt(aid)}/event`, { type, detail, id }),
+  // The exam page is closing: sent so it still arrives as the page goes away.
+  closing: (aid) => request("POST", `${attempt(aid)}/event`, { type: "closed" }, { keepalive: true }).catch(() => {}),
   unlock: (aid, code) => post(`${attempt(aid)}/unlock`, { code }),
   refresh: (aid, code) => post(`${attempt(aid)}/refresh`, { code }),
   submit: (aid, answers) => post(`${attempt(aid)}/submit`, { answers }),

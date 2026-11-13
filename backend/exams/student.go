@@ -340,7 +340,7 @@ func startAttempt(c *gin.Context) {
 		ID: primitive.NewObjectID(), ExamID: exam.ID, StudentEmail: user.Email, StudentName: user.Name,
 		SetNumber: setNumber, QuestionIDs: ids, OptionOrder: order, PaperVersion: 1,
 		Answers: map[string]Answer{}, Runs: map[string]RunResult{}, Overrides: map[string]float64{}, Status: AttemptInProgress,
-		StartedAt: now, DeadlineAt: now.Add(time.Duration(exam.DurationMinutes) * time.Minute), LastSeenAt: now,
+		StartedAt: now, DeadlineAt: now.Add(time.Duration(exam.DurationMinutes) * time.Minute), LastSeenAt: now, LastActiveAt: &now,
 		Results: []QuestionResult{}, Events: []Event{{At: now, Type: "started", Detail: fmt.Sprintf("Set %d", setNumber)}},
 		UserAgent: truncateRunes(c.Request.UserAgent(), 300),
 	}
@@ -377,7 +377,7 @@ func resumeAttempt(ctx context.Context, c *gin.Context, exam *Exam, att *Attempt
 		// whatever the exam's old "lock on rejoin" setting says: it's only noted for
 		// the teacher, so a student who had to restart can carry on without help.
 		_, err := attemptsCol().UpdateOne(ctx, bson.M{"_id": att.ID, "status": AttemptInProgress}, bson.M{
-			"$set":  bson.M{"last_seen_at": now},
+			"$set":  bson.M{"last_seen_at": now, "last_active_at": now},
 			"$push": bson.M{"events": eventPush(Event{At: now, Type: "rejoined"})},
 		})
 		if err != nil {
@@ -440,6 +440,8 @@ func syncAttempt(c *gin.Context) {
 	var req struct {
 		Answers map[string]Answer `json:"answers"`
 		Flags   *ClientFlags      `json:"flags"`
+		// Seconds since the student last typed, clicked, scrolled or moved the mouse.
+		IdleSeconds *int `json:"idle_seconds"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondErr(c, newError(http.StatusBadRequest, "Invalid request body."))
@@ -465,6 +467,10 @@ func syncAttempt(c *gin.Context) {
 		set := bson.M{"last_seen_at": now}
 		if req.Flags != nil {
 			set["flags"] = *req.Flags
+		}
+		if req.IdleSeconds != nil {
+			idle := min(max(*req.IdleSeconds, 0), 24*60*60)
+			set["last_active_at"] = now.Add(-time.Duration(idle) * time.Second)
 		}
 		if req.Answers != nil {
 			clean, answered := sanitizeAnswers(req.Answers, att)
@@ -527,6 +533,20 @@ func attemptEvent(c *gin.Context) {
 			return
 		}
 		att.ClipboardBlocks++
+		respondState(ctx, c, att)
+		return
+	}
+	if req.Type == "closed" {
+		// The exam page is being closed or reloaded. Not a violation (leaving the tab
+		// already counts as one): it tells the teacher the student is offline at once,
+		// rather than idle. Reopening the page checks in again and clears it.
+		if _, err := attemptsCol().UpdateOne(ctx, bson.M{"_id": att.ID}, bson.M{
+			"$set":  bson.M{"closed_at": now},
+			"$push": bson.M{"events": eventPush(event)},
+		}); err != nil {
+			respondErr(c, err)
+			return
+		}
 		respondState(ctx, c, att)
 		return
 	}
